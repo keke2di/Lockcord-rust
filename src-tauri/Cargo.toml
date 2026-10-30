@@ -1,0 +1,47 @@
+[package]
+name = "lockcord"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.23.1"
+flate2 = "1.1.10"
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+getrandom = "0.4.3"
+hkdf = "0.12"
+hmac = "0.12"
+percent-encoding = "2.3"
+regex = "1.13"
+keyring = { version = "3", features = ["windows-native"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "gzip", "http2"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+sys-locale = "0.3.2"
+tauri = { version = "2", default-features = false, features = ["wry", "compression", "common-controls-v6", "image-png", "image-ico", "tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+url = "2.5.8"
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+zeroize = "1"
+
+[build-dependencies]
+tauri-build = "2"
+
+# Small debug info keeps the build folder (on D:) from ballooning.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

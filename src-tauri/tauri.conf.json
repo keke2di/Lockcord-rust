@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LockCord",
+  "version": "1.0.0",
+  "identifier": "chat.lockcord.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "img-src": "'self' data: blob: http://lcmedia.localhost lcmedia: http://lctheme.localhost lctheme:",
+        "media-src": "'self' blob: http://lcmedia.localhost lcmedia:",
+        "font-src": "'self' data: http://lctheme.localhost lctheme:",
+        "connect-src": "ipc: http://ipc.localhost https://ecdh.chat wss://ecdh.chat",
+        "frame-src": "'none'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico", "icons/icon.png"]
+  }
+}
