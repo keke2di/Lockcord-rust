@@ -14,10 +14,16 @@ talks to Discord's API and gateway itself.
   list, unread markers, and search (`from:`, `has:`, `in:`, dates).
 - **People**: profiles (click a name or avatar), friends and requests, adding a friend by
   username, your own status (online, idle, do not disturb, invisible), new group DMs.
-- **Encrypted DMs** with other LockCord users: press **Encrypt** in a DM's header. Your normal DM
-  becomes end-to-end encrypted: Discord stores only ciphertext, only your two LockCords can read
-  it, and the messages stay readable later. Compare the safety code once; if their key ever
-  changes, LockCord stops sending until you check it.
+- **Calls** in DMs, group DMs and server voice channels: voice, camera, screen sharing (Go Live)
+  and watching others' streams, ringing, mute, deafen, push-to-talk, per-person volume, and
+  optional global mute and deafen keys. Calls are end-to-end encrypted with Discord's DAVE
+  protocol; compare the call's code to check. Microphone, camera and screen open only during a
+  call. Stage channels aren't supported.
+- **Encrypted DMs** with other LockCord users: press **Encrypt** in a DM's header. Their LockCord
+  asks them first; once they accept, your normal DM is end-to-end encrypted: Discord stores only
+  ciphertext, only your two LockCords can read it, and the messages stay readable later. Compare
+  the 60-digit safety code once; if their key ever changes, LockCord stops sending until you check
+  it.
 - **Secret chats**: the lock in a DM's header. Live, peer to peer and end-to-end encrypted
   (ecdh.chat's protocol); they open only after both of you compare a 6-digit code, and nothing
   but the invite goes through Discord.
@@ -34,11 +40,31 @@ talks to Discord's API and gateway itself.
 
 Privacy: no analytics or crash reports go anywhere, images from Discord are fetched by LockCord
 itself, the login happens on Discord's own page in a separate window (LockCord never sees your
-password), and the session is kept in Windows Credential Manager.
+password), and the session is kept in Windows Credential Manager, on this computer only (never
+roaming to other machines) and encrypted for your Windows account. Calls connect to Discord's
+voice servers directly, as Discord's own app does, so Discord sees your IP address in a call.
+
+### What encrypted DMs don't protect
+
+- **No forward secrecy.** The message keys come from your two LockCords' identity keys, so anyone
+  who later got hold of your identity key (and Discord's copy of the ciphertext) could read that
+  DM's past messages. "Turn off" in the DM forgets its keys.
+- **Your own computer.** Programs running as your Windows user can read the keys LockCord keeps.
+- **What Discord still sees:** that you two talk, when, roughly how long each message is,
+  reactions, typing, edits and deletes, and the key messages themselves (public keys only).
+  Files go unencrypted, and only on purpose.
+
+## Installing
+
+Download `LockCord_<version>_x64-setup.exe` from the releases and run it. It installs for your
+Windows user only (no administrator rights), with a Start menu entry and an uninstaller. It isn't
+signed, so Windows SmartScreen may warn: choose **More info**, then **Run anyway**. The portable
+`lockcord.exe` works too, without installing.
 
 ## Building it yourself
 
-You need Windows 10 or 11 (WebView2 comes with them) and Rust.
+You need Windows 10 or 11 (WebView2 comes with them), Rust, and CMake (for the Opus codec used in
+calls: <https://cmake.org/download/>).
 
 1. Install Rust from <https://rustup.rs>. If it asks for the Visual C++ build tools, install
    them (Visual Studio Build Tools, "Desktop development with C++").
@@ -54,13 +80,17 @@ You need Windows 10 or 11 (WebView2 comes with them) and Rust.
 
 To run straight from the sources instead: `cd src-tauri` and `cargo run --release`.
 
+To build the installer too, use Tauri's CLI in `src-tauri`: `npx @tauri-apps/cli@2 build`. The
+installer is then under `target\release\bundle\nsis`.
+
 ## Running
 
 - Sign in with Discord's own login page (a separate window opens), or with a session token.
 - `lockcord.exe --profile=alt` runs a second account next to the first.
 - `lockcord.exe --safe-mode` starts with the default theme.
 - Settings, themes and encrypted-DM contacts are kept per profile in
-  `%APPDATA%\chat.lockcord.desktop`; the session and keys in Windows Credential Manager.
+  `%APPDATA%\chat.lockcord.desktop`; the session and keys in Windows Credential Manager (on this
+  computer only, encrypted for your Windows account).
 
 ## License
 

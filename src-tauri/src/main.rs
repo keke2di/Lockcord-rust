@@ -7,6 +7,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod auth;
+mod call;
 mod captcha;
 mod deletion;
 mod desktop;
@@ -21,6 +22,7 @@ mod rest;
 mod search;
 mod settings;
 mod translate;
+mod vault;
 
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -74,6 +76,8 @@ struct Live {
     my_status: Value,
     // People whose profile showed a server in common: a DM may be opened with them too.
     dm_ok: HashSet<String>,
+    // Who is in which voice channel or DM call, and the call this device is in (call.rs).
+    calls: call::Calls,
 }
 
 // Encrypted DMs (e2e.rs): the identity (if made), the contacts with their keys, the peers they're
@@ -137,7 +141,8 @@ impl Live {
         if event == e2e::Event::Changed {
             m["lc_key_changed"] = json!(true);
         }
-        if self.e2e.book.contacts.get(&peer).is_some_and(|c| c.trusted.is_some()) {
+        // Pinned once this side chose encryption with them (a stranger's offer pins nothing).
+        if self.e2e.book.contacts.get(&peer).is_some_and(|c| c.chosen(identity.public.as_bytes())) {
             self.e2e.pinned.insert(peer.clone());
         }
         let answer = self.e2e.book.contacts.get(&peer).is_some_and(|c| c.needs_answer(identity.public.as_bytes())) && !self.e2e.answering.contains(&peer);
@@ -146,7 +151,7 @@ impl Live {
 
     /// A message (and its reply preview) with LC1 content, opened: the text in `content`, marked
     /// `lc_e2e`; or emptied and marked `lc_e2e_locked` (no key) / `lc_e2e_failed` (doesn't check).
-    fn e2e_open(&self, m: &mut Value) {
+    fn e2e_open(&mut self, m: &mut Value) {
         if let Some(r) = m.get_mut("referenced_message").filter(|r| r.is_object()) {
             self.e2e_open_one(r);
         }
@@ -161,17 +166,25 @@ impl Live {
         self.e2e_open_one(m);
     }
 
-    fn e2e_open_one(&self, m: &mut Value) {
+    fn e2e_open_one(&mut self, m: &mut Value) {
         let Some(content) = m["content"].as_str().filter(|c| e2e::is_lc1(c)).map(str::to_owned) else { return };
         let channel = m["channel_id"].as_str().unwrap_or("").to_owned();
         let sender = m["author"]["id"].as_str().unwrap_or("").to_owned();
-        let posted = deletion::time_of(m["id"].as_str().unwrap_or(""));
+        let id = m["id"].as_str().unwrap_or("").to_owned();
+        let posted = deletion::time_of(&id);
         let me = self.me_id();
         m["content"] = json!("");
-        let opened = match self.dm_peer(&channel) {
-            Some(peer) if sender == me || sender == peer => self.e2e.book.open(&peer, &channel, &sender, &content, posted),
-            _ => Err(e2e::E2eError::NoKey),
+        let peer = self.dm_peer(&channel).filter(|peer| sender == me || &sender == peer);
+        let opened = match &peer {
+            Some(peer) => self.e2e.book.open(peer, &channel, &sender, &content, posted),
+            None => Err(e2e::E2eError::NoKey),
         };
+        // The same ciphertext under a second Discord message: shown, but marked as a copy.
+        if let (Ok(_), Some(peer)) = (&opened, &peer) {
+            if self.e2e.book.replayed(peer, &content, &id) {
+                m["lc_e2e_replayed"] = json!(true);
+            }
+        }
         match opened {
             Ok(e2e::Opened::Text(text)) => {
                 m["content"] = json!(text);
@@ -203,7 +216,8 @@ impl Live {
         for peer in self.e2e.pinned.iter().filter(|p| !self.e2e.book.contacts.contains_key(*p)) {
             contacts.push(json!({ "peer": peer, "status": "lost", "channel": channel_of(peer) }));
         }
-        json!({ "contacts": contacts, "problem": self.e2e.problem })
+        let notice = self.e2e.book.code_upgraded.then_some("Safety codes are longer now (60 digits), so earlier comparisons were cleared. Compare the new code once more with each contact.");
+        json!({ "contacts": contacts, "problem": self.e2e.problem, "notice": notice })
     }
 
     fn me_id(&self) -> String {
@@ -264,6 +278,10 @@ struct App {
     // From the settings: close to the tray, and how much a notification says.
     close_to_tray: AtomicBool,
     notify: Mutex<String>,
+    // Calls: the Voice & Video settings, decoded video waiting for the window, the microphone test.
+    voice: Mutex<call::VoiceSettings>,
+    frames: Arc<call::Frames>,
+    mic_test: Mutex<Option<discord_voice::audio::Audio>>,
 }
 
 fn profile_arg() -> String {
@@ -344,7 +362,7 @@ fn ready_view(live: &Live) -> Value {
     json!({
         "me": live.me, "dms": live.dms, "relationships": live.relationships, "presences": live.presences, "reads": live.reads,
         "guilds": live.guild_views(), "muted": { "guilds": live.muted.0, "channels": live.muted.1 },
-        "e2e": live.e2e_view(), "my_status": live.my_status,
+        "e2e": live.e2e_view(), "my_status": live.my_status, "voice": live.calls.view(),
     })
 }
 
@@ -407,6 +425,7 @@ async fn start_session(app: AppHandle, token: String, save: bool) -> Result<Valu
         relationships: Vec::new(), presences: HashMap::new(), reads: HashMap::new(),
         guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound, subscribed: None,
         queue, guard: rules, wiping: HashSet::new(), purge: None, e2e: e2e_state, my_status: people::status_view("online"), dm_ok: HashSet::new(),
+        calls: call::Calls::default(),
     });
     emit(&app, "lc://session", json!({ "signedIn": true, "me": user_view(&me) }));
 
@@ -463,6 +482,13 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
             let me = live.me_id();
             let own = guilds::merged_own(&data, &me);
             live.guilds = data["guilds"].as_array().map(|list| list.iter().filter_map(|g| guilds::Guild::parse(g, &me, own.get(g["id"].as_str()?))).collect()).unwrap_or_default();
+            // A fresh session: Discord dropped the old one's voice states (and so any call).
+            live.calls.reset();
+            for g in data["guilds"].as_array().into_iter().flatten() {
+                if let Some(id) = g["id"].as_str() {
+                    live.calls.load_guild(id, &g["voice_states"]);
+                }
+            }
             live.guild_order = guilds::order(&data);
             live.muted = guilds::muted(&data);
             live.my_status = people::ready_status(&data);
@@ -475,6 +501,9 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
             let payload = ready_view(live);
             drop(guard);
             emit(app, "lc://ready", payload);
+        }
+        "VOICE_STATE_UPDATE" | "VOICE_SERVER_UPDATE" | "CALL_CREATE" | "CALL_UPDATE" | "CALL_DELETE" | "STREAM_CREATE" | "STREAM_SERVER_UPDATE" | "STREAM_DELETE" => {
+            on_voice_dispatch(app, state, live, name, &data);
         }
         "READY_SUPPLEMENTAL" => {
             let me = live.me_id();
@@ -494,6 +523,7 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
             match (name, index) {
                 ("GUILD_CREATE", _) => {
                     let Some(g) = guilds::Guild::parse(&data, &me, None) else { return };
+                    live.calls.load_guild(&g.id, &data["voice_states"]);
                     match index {
                         Some(i) => live.guilds[i] = g,
                         None => live.guilds.push(g),
@@ -740,6 +770,7 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
                     e2e_after_key(app, state, live, seen);
                 }
                 live.e2e_open(&mut data);
+                e2e_save_seen(app, state, live);
             }
             let mut read = None;
             let Some(index) = live.dms.iter().position(|d| d["id"].as_str() == Some(channel)) else {
@@ -916,6 +947,7 @@ async fn messages(app: AppHandle, state: State<'_, App>, channel_id: String, bef
         for m in messages.iter_mut() {
             live.e2e_open(m);
         }
+        e2e_save_seen(&app, &state, live);
     }
     Ok(list)
 }
@@ -1071,7 +1103,7 @@ async fn edit_message(state: State<'_, App>, channel_id: String, message_id: Str
         }
     };
     let mut edited = rest_of(&state)?.patch(&format!("/channels/{channel_id}/messages/{message_id}"), json!({ "content": content })).await.map_err(|e| e.to_string())?;
-    if let Some(live) = state.live.lock().unwrap().as_ref() {
+    if let Some(live) = state.live.lock().unwrap().as_mut() {
         live.e2e_open(&mut edited);
     }
     Ok(edited)
@@ -1105,6 +1137,12 @@ fn load_e2e(app: &AppHandle, state: &App, me: &str) -> E2eState {
         (None, _) if !pinned.is_empty() => (e2e::Book::default(), Some("Your encryption key is missing from Windows Credential Manager.".to_owned())),
         _ => (e2e::Book::default(), None),
     };
+    // The cleared "compared" marks are kept, so the notice comes once.
+    if book.code_upgraded {
+        if let (Some(id), Ok(store)) = (&identity, store(app, state)) {
+            let _ = store.write_json("contacts.json", &book.to_json(id));
+        }
+    }
     let problem = problem.or_else(|| {
         let missing = pinned.iter().filter(|p| !book.contacts.contains_key(*p)).count();
         (missing > 0).then(|| format!("The keys for {missing} encrypted DM{} are missing; sending there is blocked until encryption is turned on again.", if missing == 1 { "" } else { "s" }))
@@ -1120,6 +1158,13 @@ fn save_e2e(app: &AppHandle, state: &App, live: &Live) -> Result<(), String> {
 
 fn e2e_changed(app: &AppHandle, live: &Live) {
     emit(app, "lc://e2e", live.e2e_view());
+}
+
+// Messages seen in encrypted DMs (for spotting copies posted again) are kept on disk.
+fn e2e_save_seen(app: &AppHandle, state: &App, live: &mut Live) {
+    if live.e2e.book.seen_dirty && save_e2e(app, state, live).is_ok() {
+        live.e2e.book.seen_dirty = false;
+    }
 }
 
 // After a key message was recorded: kept on disk, the UI told, and an offer answered.
@@ -1176,7 +1221,7 @@ fn e2e_status(state: State<App>) -> Value {
 }
 
 // Turning encryption on with someone (or renewing the keys): this side's offer, posted in the DM.
-// Their LockCord answers by itself.
+// Their LockCord asks them first (or answers by itself if encryption was already on).
 #[tauri::command]
 async fn e2e_enable(app: AppHandle, state: State<'_, App>, channel_id: String) -> Result<(), String> {
     let peer = {
@@ -1192,6 +1237,36 @@ async fn e2e_enable(app: AppHandle, state: State<'_, App>, channel_id: String) -
         peer
     };
     e2e_post_key(app, peer, e2e::Role::Offer).await
+}
+
+// The user accepts the other side's offer: this side's answer, posted in the DM.
+#[tauri::command]
+async fn e2e_accept_offer(app: AppHandle, state: State<'_, App>, peer_id: String) -> Result<(), String> {
+    {
+        let mut guard = state.live.lock().unwrap();
+        let live = guard.as_mut().ok_or("Not signed in.")?;
+        let identity = live.e2e.identity.as_ref().ok_or("No encryption key.")?;
+        if !live.e2e.book.contacts.get(&peer_id).is_some_and(|c| c.offer_waiting(identity.public.as_bytes())) {
+            return Err("There's no offer to accept.".into());
+        }
+        if !live.e2e.answering.insert(peer_id.clone()) {
+            return Ok(());
+        }
+    }
+    e2e_post_key(app, peer_id, e2e::Role::Answer).await
+}
+
+// The user leaves the other side's offer unanswered: nothing is posted, and it isn't asked again.
+#[tauri::command]
+fn e2e_ignore_offer(app: AppHandle, state: State<App>, peer_id: String) -> Result<(), String> {
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    if !live.e2e.book.ignore_offer(&peer_id) {
+        return Err("There's no offer to ignore.".into());
+    }
+    save_e2e(&app, &state, live)?;
+    e2e_changed(&app, live);
+    Ok(())
 }
 
 // The user accepts their new key (after comparing the safety code, ideally).
@@ -1233,6 +1308,610 @@ fn e2e_forget(app: AppHandle, state: State<App>, peer_id: String) -> Result<(), 
     live.e2e.problem = None;
     e2e_changed(&app, live);
     Ok(())
+}
+
+// --- Calls (call.rs) -----------------------------------------------------------------------------
+
+fn call_changed(app: &AppHandle, live: &Live) {
+    emit(app, "lc://call", live.calls.active_view());
+}
+
+fn rooms_changed(app: &AppHandle, live: &Live, channels: &[String]) {
+    for c in channels {
+        emit(app, "lc://voice-room", live.calls.room_view(c));
+    }
+}
+
+fn voice_settings(state: &App) -> call::VoiceSettings {
+    state.voice.lock().unwrap().clone()
+}
+
+// A channel this account may call in: a DM or group DM, or a server voice channel it can connect
+// to. (guild, the other person in a 1:1 DM, may speak.)
+fn callable(live: &Live, channel: &str) -> Result<(Option<String>, Option<String>, bool), String> {
+    if let Some(dm) = live.dms.iter().find(|d| d["id"] == channel && (d["type"] == 1 || d["type"] == 3)) {
+        let peer = (dm["type"] == 1).then(|| dm["recipients"][0]["id"].as_str().map(str::to_owned)).flatten();
+        return Ok((None, peer, true));
+    }
+    let g = live.guild_with(channel).ok_or("Not a channel you can see.")?;
+    let guild = &live.guilds[g];
+    let c = guild.channel(channel).ok_or("Not a channel you can see.")?;
+    match c["type"].as_u64() {
+        Some(2) => {}
+        Some(13) => return Err("Stage channels aren't supported.".into()),
+        _ => return Err("That isn't a voice channel.".into()),
+    }
+    let p = guild.permissions(&live.me_id(), c);
+    if p & guilds::CONNECT == 0 {
+        return Err("You can't connect to that channel.".into());
+    }
+    Ok((Some(guild.id.clone()), None, p & guilds::SPEAK != 0))
+}
+
+// Mute as the call's controls and push-to-talk have it.
+fn effective_mute(a: &call::Active, settings: &call::VoiceSettings) -> bool {
+    a.muted || a.deafened || (settings.push_to_talk && !a.ptt_held)
+}
+
+fn send_voice_state(live: &Live) {
+    if let Some(a) = &live.calls.active {
+        let _ = live.outbound.try_send(call::voice_state(a.guild.as_deref(), Some(&a.channel), a.muted, a.deafened, a.camera));
+    }
+}
+
+// Starts the call's media once Discord gave both its voice session and its voice server.
+fn call_maybe_start(app: &AppHandle, state: &App, live: &mut Live) {
+    let me = live.me_id();
+    let settings = voice_settings(state);
+    let Some(a) = live.calls.active.as_mut() else { return };
+    if a.media.is_some() || a.session.is_none() || a.server.is_none() {
+        return;
+    }
+    let request = a.request;
+    let (status_app, audio_app, end_app) = (app.clone(), app.clone(), app.clone());
+    let status = move |s: discord_voice::Status| {
+        call_status(&status_app, request, s);
+        Ok(())
+    };
+    let audio_status = move |r: Result<(), &'static str>| {
+        if let Err(e) = r {
+            call_problem(&audio_app, request, e);
+        }
+    };
+    let ended = move |r: Result<(), &'static str>| call_ended(&end_app, request, r.err());
+    match call::start_media(a, &me, &settings, state.frames.clone(), status, audio_status, ended) {
+        Ok(media) => {
+            let muted = effective_mute(a, &settings);
+            media.set_controls(muted, a.deafened);
+            a.media = Some(media);
+            a.phase = "connecting";
+        }
+        Err(e) => {
+            a.error = Some(e);
+            a.phase = "failed";
+        }
+    }
+    call_changed(app, live);
+}
+
+// The voice crate's progress for call `request`.
+fn call_status(app: &AppHandle, request: u64, status: discord_voice::Status) {
+    if let discord_voice::Status::Speaking(users) = &status {
+        let ids: Vec<String> = users.iter().filter(|u| **u != 0).map(u64::to_string).collect();
+        emit(app, "lc://call-speaking", json!(ids));
+        return;
+    }
+    let state = app.state::<App>();
+    let mut guard = state.live.lock().unwrap();
+    let Some(live) = guard.as_mut() else { return };
+    let mut ring = None;
+    {
+        let Some(a) = live.calls.active.as_mut().filter(|a| a.request == request) else { return };
+        match &status {
+            discord_voice::Status::TransportReady => {
+                if std::mem::take(&mut a.ring) {
+                    ring = Some(a.channel.clone());
+                }
+            }
+            discord_voice::Status::CameraAvailable(on) => a.camera_available = *on,
+            discord_voice::Status::Ready { privacy_code } => {
+                a.privacy = Some(privacy_code.chars().take(256).collect());
+                a.error = None;
+            }
+            discord_voice::Status::WaitingForPeer => a.privacy = None,
+            _ => {}
+        }
+        if let Some(phase) = call::phase_of(&status) {
+            a.phase = phase;
+            if let Some(m) = &a.media {
+                m.set_ready(matches!(phase, "connected" | "waiting"));
+            }
+        }
+    }
+    if let Some(channel) = ring {
+        let rest = live.rest.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = rest.post(&format!("/channels/{channel}/call/ring"), json!({ "recipients": null })).await;
+        });
+    }
+    call_changed(app, live);
+}
+
+// Something wrong that doesn't end the call (a microphone that won't open).
+fn call_problem(app: &AppHandle, request: u64, problem: &str) {
+    let state = app.state::<App>();
+    let mut guard = state.live.lock().unwrap();
+    let Some(live) = guard.as_mut() else { return };
+    if let Some(a) = live.calls.active.as_mut().filter(|a| a.request == request) {
+        a.error = Some(problem.to_owned());
+        call_changed(app, live);
+    }
+}
+
+// The voice transport of call `request` ended: the call is left (Discord told, if it wasn't it
+// that ended it).
+fn call_ended(app: &AppHandle, request: u64, error: Option<&'static str>) {
+    let state = app.state::<App>();
+    let mut guard = state.live.lock().unwrap();
+    let Some(live) = guard.as_mut() else { return };
+    if !live.calls.active.as_ref().is_some_and(|a| a.request == request) {
+        return;
+    }
+    call_leave_now(app, &state, live);
+    let reason = match error {
+        Some(e) if e == discord_voice::DISCONNECTED_BY_DISCORD => "Discord ended the call.".to_owned(),
+        Some(e) => format!("The call ended: {e}"),
+        None => "The call ended.".to_owned(),
+    };
+    emit(app, "lc://call-ended", json!({ "reason": reason }));
+}
+
+// Leaves the call this device is in: streams stopped, Discord told, media closed.
+fn call_leave_now(app: &AppHandle, state: &App, live: &mut Live) {
+    let Some(a) = live.calls.active.take() else { return };
+    for s in [&a.share, &a.watch].into_iter().flatten() {
+        let _ = live.outbound.try_send(json!({ "op": 19, "d": { "stream_key": s.key } }));
+    }
+    let _ = live.outbound.try_send(call::voice_state(a.guild.as_deref(), None, false, false, false));
+    drop(a);
+    state.frames.clear();
+    call_changed(app, live);
+}
+
+fn on_voice_dispatch(app: &AppHandle, state: &App, live: &mut Live, name: &str, data: &Value) {
+    let me = live.me_id();
+    match name {
+        "VOICE_STATE_UPDATE" => {
+            let changed = live.calls.apply_state(data);
+            rooms_changed(app, live, &changed);
+            if data["user_id"] != me.as_str() {
+                return;
+            }
+            let Some(a) = live.calls.active.as_mut() else { return };
+            let channel = data["channel_id"].as_str();
+            let session = data["session_id"].as_str().map(str::to_owned);
+            if channel == Some(a.channel.as_str()) {
+                // Until media starts, the newest state of this account in the call is the one.
+                if a.media.is_none() {
+                    a.session = session;
+                    call_maybe_start(app, state, live);
+                }
+            } else if a.media.is_some() && session == a.session {
+                // This session left the channel: moved or disconnected by someone, or Discord.
+                call_leave_now(app, state, live);
+                emit(app, "lc://call-ended", json!({ "reason": if channel.is_some() { "You were moved to another channel. Join it again to talk there." } else { "You were disconnected from the call." } }));
+            }
+        }
+        "VOICE_SERVER_UPDATE" => {
+            let Some(a) = live.calls.active.as_mut() else { return };
+            let ours = match &a.guild {
+                Some(g) => data["guild_id"] == g.as_str(),
+                None => data["guild_id"].is_null() && (data["channel_id"].is_null() || data["channel_id"] == a.channel.as_str()),
+            };
+            let (Some(token), Some(endpoint)) = (data["token"].as_str(), data["endpoint"].as_str()) else { return };
+            if !ours || token.len() > 2048 || endpoint.len() > 256 {
+                return;
+            }
+            // A new voice server for a running call: its media starts over there.
+            if a.media.take().is_some() {
+                a.privacy = None;
+            }
+            a.server = Some((token.to_owned(), endpoint.to_owned()));
+            call_maybe_start(app, state, live);
+        }
+        "CALL_CREATE" | "CALL_UPDATE" | "CALL_DELETE" => {
+            let channel = data["channel_id"].as_str().unwrap_or("").to_owned();
+            let was_rung = live.calls.dm_calls.get(&channel).is_some_and(|c| c["ringing"].as_array().is_some_and(|r| r.iter().any(|u| u == me.as_str())));
+            let rung = live.calls.apply_dm_call(name, data, &me);
+            emit(app, "lc://dm-call", json!({ "channel": channel, "call": live.calls.dm_calls.get(&channel) }));
+            rooms_changed(app, live, std::slice::from_ref(&channel));
+            let in_it = live.calls.active.as_ref().is_some_and(|a| a.channel == channel);
+            if rung && !was_rung && !in_it {
+                notify_call(app, state, live, &channel);
+            }
+        }
+        "STREAM_CREATE" | "STREAM_SERVER_UPDATE" | "STREAM_DELETE" => on_stream_dispatch(app, state, live, name, data),
+        _ => {}
+    }
+}
+
+// Someone is calling: a notification and the taskbar flash (the window rings and shows the card).
+fn notify_call(app: &AppHandle, state: &App, live: &Live, channel: &str) {
+    emit(app, "lc://ring", json!({ "channel": channel }));
+    if *state.notify.lock().unwrap() == "off" || live.muted.1.iter().any(|c| c == channel) {
+        return;
+    }
+    let dm = live.dms.iter().find(|d| d["id"] == channel);
+    let who = dm.map(|d| if d["type"] == 3 { d["name"].as_str().unwrap_or("A group").to_owned() } else {
+        let r = &d["recipients"][0];
+        r["global_name"].as_str().or(r["username"].as_str()).unwrap_or("Someone").to_owned()
+    }).unwrap_or_else(|| "Someone".to_owned());
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app.notification().builder().title(format!("{who} is calling")).body("Answer in LockCord").show();
+    if let Some(w) = app.get_webview_window(MAIN) {
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
+    }
+}
+
+// Go Live: your stream's or a watched stream's connection, from Discord.
+fn on_stream_dispatch(app: &AppHandle, state: &App, live: &mut Live, name: &str, data: &Value) {
+    let me = live.me_id();
+    let Some(key) = data["stream_key"].as_str().filter(|k| k.len() <= 128) else { return };
+    let Some(a) = live.calls.active.as_mut() else { return };
+    let mine = a.share.as_ref().is_some_and(|s| s.key == key);
+    let watched = a.watch.as_ref().is_some_and(|s| s.key == key);
+    if !mine && !watched {
+        return;
+    }
+    if name == "STREAM_DELETE" {
+        let reason = call::stream_end_reason(data);
+        if mine {
+            a.share = None;
+        } else if let Some(w) = a.watch.take() {
+            state.frames.drop_key(&format!("stream:{}", w.streamer.clone().unwrap_or_default()));
+        }
+        call_changed(app, live);
+        emit(app, "lc://call-notice", json!({ "text": reason }));
+        return;
+    }
+    let s = if mine { a.share.as_mut() } else { a.watch.as_mut() };
+    let Some(s) = s else { return };
+    match name {
+        "STREAM_CREATE" => s.rtc = s.rtc.or_else(|| call::stream_rtc(data)),
+        _ => {
+            if let (Some(token), Some(endpoint)) = (data["token"].as_str().filter(|t| t.len() <= 2048), data["endpoint"].as_str().filter(|e| e.len() <= 256)) {
+                s.server = Some((token.to_owned(), endpoint.to_owned()));
+            }
+        }
+    }
+    if s.task.is_some() || s.rtc.is_none() || s.server.is_none() {
+        return;
+    }
+    let Some(media) = a.media.as_ref() else { return };
+    let identity = media.identity.clone();
+    let watching = !mine;
+    let Some(s) = (if mine { a.share.as_ref() } else { a.watch.as_ref() }) else { return };
+    let request = s.request;
+    let creds = match call::stream_credentials(s, a, &me) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let stream_audio = media.stream_audio();
+    let (status_app, end_app) = (app.clone(), app.clone());
+    let status = move |st: discord_voice::Status| {
+        stream_status(&status_app, request, watching, st);
+        Ok(())
+    };
+    let s = if mine { a.share.as_mut() } else { a.watch.as_mut() };
+    let Some(s) = s else { return };
+    if mine {
+        let Some(settings) = s.settings else { return };
+        match discord_voice::screen::Worker::start(settings, || {}) {
+            Ok((worker, video)) => {
+                s.worker = Some(worker);
+                s.task = Some(tauri::async_runtime::spawn(async move {
+                    let r = discord_voice::run_stream(creds, identity, video, status).await;
+                    stream_ended(&end_app, request, false, r.err());
+                }));
+            }
+            Err(e) => {
+                let key = s.key.clone();
+                a.share = None;
+                let _ = live.outbound.try_send(json!({ "op": 19, "d": { "stream_key": key } }));
+                emit(app, "lc://call-notice", json!({ "text": format!("Couldn't share: {e}") }));
+            }
+        }
+    } else {
+        let sink = call::stream_sink(state.frames.clone(), s.streamer.clone().unwrap_or_default());
+        s.task = Some(tauri::async_runtime::spawn(async move {
+            let r = discord_voice::watch_stream(creds, identity, sink, Some(stream_audio), status).await;
+            stream_ended(&end_app, request, true, r.err());
+        }));
+    }
+    call_changed(app, live);
+}
+
+fn stream_status(app: &AppHandle, request: u64, watching: bool, status: discord_voice::Status) {
+    let Some(phase) = call::phase_of(&status) else { return };
+    let state = app.state::<App>();
+    let mut guard = state.live.lock().unwrap();
+    let Some(live) = guard.as_mut() else { return };
+    let Some(a) = live.calls.active.as_mut() else { return };
+    let s = if watching { a.watch.as_mut() } else { a.share.as_mut() };
+    if let Some(s) = s.filter(|s| s.request == request) {
+        s.phase = phase;
+        call_changed(app, live);
+    }
+}
+
+fn stream_ended(app: &AppHandle, request: u64, watching: bool, error: Option<&'static str>) {
+    let state = app.state::<App>();
+    let mut guard = state.live.lock().unwrap();
+    let Some(live) = guard.as_mut() else { return };
+    let Some(a) = live.calls.active.as_mut() else { return };
+    let slot = if watching { &mut a.watch } else { &mut a.share };
+    if !slot.as_ref().is_some_and(|s| s.request == request) {
+        return;
+    }
+    let s = slot.take();
+    if let Some(s) = &s {
+        let _ = live.outbound.try_send(json!({ "op": 19, "d": { "stream_key": s.key } }));
+        if watching {
+            state.frames.drop_key(&format!("stream:{}", s.streamer.clone().unwrap_or_default()));
+        }
+    }
+    call_changed(app, live);
+    let what = if watching { "Watching" } else { "Your screen share" };
+    emit(app, "lc://call-notice", json!({ "text": match error { Some(e) => format!("{what} stopped: {e}"), None => format!("{what} stopped.") } }));
+}
+
+// Joins a call: a DM's (ringing the others if nobody is in it yet) or a server voice channel.
+// One call at a time: the window asks before switching.
+#[tauri::command]
+fn call_join(app: AppHandle, state: State<App>, channel_id: String) -> Result<(), String> {
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    if live.calls.active.as_ref().is_some_and(|a| a.channel == channel_id) {
+        return Ok(());
+    }
+    let (guild, peer, _speak) = callable(live, &channel_id)?;
+    call_leave_now(&app, &state, live);
+    let me = live.me_id();
+    let ring = guild.is_none() && !live.calls.rooms.get(&channel_id).is_some_and(|r| r.keys().any(|u| *u != me));
+    let request = live.calls.request();
+    live.calls.active = Some(call::Active {
+        channel: channel_id, guild, peer, request, ring, session: None, server: None, phase: "joining", privacy: None,
+        muted: false, deafened: false, camera: false, camera_available: false, ptt_held: false, error: None,
+        media: None, share: None, watch: None, volumes: HashMap::new(),
+    });
+    send_voice_state(live);
+    call_changed(&app, live);
+    Ok(())
+}
+
+#[tauri::command]
+fn call_leave(app: AppHandle, state: State<App>) -> Result<(), String> {
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    call_leave_now(&app, &state, live);
+    Ok(())
+}
+
+// Declining a DM call that rings this account: the ringing stops here (the call goes on).
+#[tauri::command]
+async fn call_decline(state: State<'_, App>, channel_id: String) -> Result<(), String> {
+    let (rest, me) = {
+        let guard = state.live.lock().unwrap();
+        let live = guard.as_ref().ok_or("Not signed in.")?;
+        if !live.dms.iter().any(|d| d["id"] == channel_id.as_str()) {
+            return Err("Not a DM.".into());
+        }
+        (live.rest.clone(), live.me_id())
+    };
+    rest.post(&format!("/channels/{channel_id}/call/stop-ringing"), json!({ "recipients": [me] })).await.map(|_| ()).map_err(|e| e.to_string())
+}
+
+// Asks Discord for a DM's call, if there is one (as opening a DM does in Discord's app).
+#[tauri::command]
+fn call_peek(state: State<App>, channel_id: String) -> Result<(), String> {
+    let guard = state.live.lock().unwrap();
+    let live = guard.as_ref().ok_or("Not signed in.")?;
+    if live.dms.iter().any(|d| d["id"] == channel_id.as_str() && (d["type"] == 1 || d["type"] == 3)) {
+        let _ = live.outbound.try_send(json!({ "op": 13, "d": { "channel_id": channel_id } }));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn call_controls(app: AppHandle, state: State<App>, muted: bool, deafened: bool) -> Result<(), String> {
+    let settings = voice_settings(&state);
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    a.muted = muted;
+    a.deafened = deafened;
+    if let Some(m) = &a.media {
+        m.set_controls(effective_mute(a, &settings), deafened);
+    }
+    send_voice_state(live);
+    call_changed(&app, live);
+    Ok(())
+}
+
+// Push-to-talk, held or let go (the window sends it while it has focus).
+#[tauri::command]
+fn call_ptt(state: State<App>, held: bool) -> Result<(), String> {
+    let settings = voice_settings(&state);
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    a.ptt_held = held;
+    if let Some(m) = &a.media {
+        m.set_controls(effective_mute(a, &settings), a.deafened);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn call_camera(app: AppHandle, state: State<App>, on: bool) -> Result<(), String> {
+    let settings = voice_settings(&state);
+    let frames = state.frames.clone();
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    let m = a.media.as_mut().ok_or("The call isn't connected yet.")?;
+    if on {
+        if !a.camera_available {
+            return Err("Video isn't available in this call.".into());
+        }
+        let wake = app.clone();
+        m.camera_on(settings.camera.clone(), frames, Arc::new(move || {
+            // Called for every picture too: never waits for the lock, and only acts once the camera
+            // stopped by itself (unplugged, in use elsewhere), turning the button off.
+            let state = wake.state::<App>();
+            let Ok(mut guard) = state.live.try_lock() else { return };
+            let Some(live) = guard.as_mut() else { return };
+            if let Some(a) = live.calls.active.as_mut() {
+                if let Some(e) = a.media.as_ref().and_then(|m| m.camera_error()) {
+                    a.error = Some(e.to_owned());
+                    a.camera = false;
+                    if let Some(m) = a.media.as_mut() {
+                        m.camera_off();
+                    }
+                    send_voice_state(live);
+                    call_changed(&wake, live);
+                }
+            }
+        }))?;
+    } else {
+        m.camera_off();
+        state.frames.drop_key("me");
+    }
+    a.camera = on;
+    send_voice_state(live);
+    call_changed(&app, live);
+    Ok(())
+}
+
+#[tauri::command]
+fn call_volume(app: AppHandle, state: State<App>, user_id: String, percent: u16) -> Result<(), String> {
+    let settings = voice_settings(&state);
+    let id: u64 = user_id.parse().map_err(|_| "bad user")?;
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    a.volumes.insert(id, percent.min(200));
+    if let Some(m) = &a.media {
+        m.apply_settings(&settings, &a.volumes);
+    }
+    call_changed(&app, live);
+    Ok(())
+}
+
+#[tauri::command]
+fn call_share_sources() -> Result<Value, String> {
+    call::share_sources()
+}
+
+// Starts sharing a screen or window in the call (Go Live).
+#[tauri::command]
+fn call_share(app: AppHandle, state: State<App>, kind: String, id: String, height: u32, fps: u32, audio: bool) -> Result<(), String> {
+    let settings = call::share_settings(&kind, &id, height, fps, audio)?;
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let me = live.me_id();
+    let request = live.calls.request();
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    if a.media.is_none() || !matches!(a.phase, "connected" | "waiting") {
+        return Err("The call isn't connected yet.".into());
+    }
+    if a.share.is_some() {
+        return Err("You're already sharing.".into());
+    }
+    let key = call::stream_key(a.guild.as_deref(), &a.channel, &me);
+    a.share = Some(call::Stream { key, request, rtc: None, server: None, task: None, worker: None, settings: Some(settings), streamer: None, phase: "connecting" });
+    let frame = json!({ "op": 18, "d": { "type": if a.guild.is_some() { "guild" } else { "call" }, "guild_id": a.guild, "channel_id": a.channel, "preferred_region": null } });
+    let _ = live.outbound.try_send(frame);
+    call_changed(&app, live);
+    Ok(())
+}
+
+#[tauri::command]
+fn call_share_stop(app: AppHandle, state: State<App>) -> Result<(), String> {
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let Some(s) = live.calls.active.as_mut().and_then(|a| a.share.take()) else { return Ok(()) };
+    let _ = live.outbound.try_send(json!({ "op": 19, "d": { "stream_key": s.key } }));
+    call_changed(&app, live);
+    Ok(())
+}
+
+// Watches someone's stream in the call this device is in.
+#[tauri::command]
+fn call_watch(app: AppHandle, state: State<App>, user_id: String) -> Result<(), String> {
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let me = live.me_id();
+    if user_id == me || !is_id(&user_id) {
+        return Err("bad user".into());
+    }
+    let request = live.calls.request();
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    if a.media.is_none() {
+        return Err("The call isn't connected yet.".into());
+    }
+    if let Some(old) = a.watch.take() {
+        let _ = live.outbound.try_send(json!({ "op": 19, "d": { "stream_key": old.key } }));
+        state.frames.drop_key(&format!("stream:{}", old.streamer.clone().unwrap_or_default()));
+    }
+    let a = live.calls.active.as_mut().ok_or("You're not in a call.")?;
+    let key = call::stream_key(a.guild.as_deref(), &a.channel, &user_id);
+    a.watch = Some(call::Stream { key: key.clone(), request, rtc: None, server: None, task: None, worker: None, settings: None, streamer: Some(user_id), phase: "connecting" });
+    let _ = live.outbound.try_send(json!({ "op": 20, "d": { "stream_key": key } }));
+    call_changed(&app, live);
+    Ok(())
+}
+
+#[tauri::command]
+fn call_watch_stop(app: AppHandle, state: State<App>) -> Result<(), String> {
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let Some(w) = live.calls.active.as_mut().and_then(|a| a.watch.take()) else { return Ok(()) };
+    let _ = live.outbound.try_send(json!({ "op": 19, "d": { "stream_key": w.key } }));
+    state.frames.drop_key(&format!("stream:{}", w.streamer.clone().unwrap_or_default()));
+    call_changed(&app, live);
+    Ok(())
+}
+
+// A video tile's newest picture, if newer than `since` (call.rs Frames::take); empty if not.
+#[tauri::command]
+fn call_frame(state: State<App>, key: String, since: u32, max_width: u32) -> tauri::ipc::Response {
+    tauri::ipc::Response::new(state.frames.take(&key, since, max_width))
+}
+
+// Microphones, speakers and cameras (listing opens none of them).
+#[tauri::command]
+async fn voice_devices() -> Value {
+    tauri::async_runtime::spawn_blocking(call::devices).await.unwrap_or(Value::Null)
+}
+
+// The microphone test in Voice & Video settings: on, off, and its level (dBFS).
+#[tauri::command]
+fn voice_test(state: State<App>, on: bool) -> Result<(), String> {
+    let mut test = state.mic_test.lock().unwrap();
+    *test = None;
+    if on {
+        if state.live.lock().unwrap().as_ref().is_some_and(|l| l.calls.active.is_some()) {
+            return Err("Leave the call to test your microphone.".into());
+        }
+        *test = Some(call::mic_test(&voice_settings(&state))?);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn voice_test_level(state: State<App>) -> Option<f32> {
+    state.mic_test.lock().unwrap().as_ref().map(|a| a.preview_level_db())
 }
 
 // --- Translation (translate.rs) -----------------------------------------------------------------
@@ -1313,7 +1992,7 @@ fn purge_scan(app: AppHandle, state: State<App>, channels: Vec<Value>, filters: 
             let before = found.len();
             purge_event(&app, json!({ "state": "scanning", "found": before, "channel": name }));
             let progress = |n: usize| purge_event(&app, json!({ "state": "scanning", "found": before + n, "channel": name }));
-            match deletion::collect(&rest, id, &me, &filters, min_id, &cancel, progress).await {
+            match deletion::collect(&rest, id, &me, &filters, min_id, &cancel, progress, |m| e2e_open_for(&app, m)).await {
                 Ok(ids) => found.extend(ids.into_iter().map(|m| (id.clone(), m))),
                 Err(e) => unread.push(format!("{name} ({e})")),
             }
@@ -1462,7 +2141,7 @@ async fn guard_wipe(app: AppHandle, rule: guard::Rule) {
         (live.rest.clone(), live.queue.clone(), live.me_id())
     };
     let never = AtomicBool::new(false);
-    let ids = deletion::collect(&rest, &rule.channel, &me, &deletion::Filters::all(), None, &never, |_| {}).await.unwrap_or_default();
+    let ids = deletion::collect(&rest, &rule.channel, &me, &deletion::Filters::all(), None, &never, |_| {}, |_| {}).await.unwrap_or_default();
     let mut deleted = 0;
     for id in &ids {
         if let Ok(deletion::Outcome::Deleted) = queue.delete(&rule.channel, id, None).await {
@@ -1474,6 +2153,13 @@ async fn guard_wipe(app: AppHandle, rule: guard::Rule) {
     }
     let name = if rule.name.is_empty() { "a channel".to_owned() } else { rule.name.clone() };
     emit(&app, "lc://guard", json!({ "text": format!("Guard wiped {deleted} message{} in {name}.", if deleted == 1 { "" } else { "s" }) }));
+}
+
+// An encrypted DM's message fetched outside the usual paths (Purge, Guard's sweep), opened.
+fn e2e_open_for(app: &AppHandle, m: &mut Value) {
+    if let Some(live) = app.state::<App>().live.lock().unwrap().as_mut() {
+        live.e2e_open(m);
+    }
 }
 
 // Every minute (first after a few seconds): what was sent from elsewhere while LockCord wasn't
@@ -1493,7 +2179,11 @@ async fn guard_loop(app: AppHandle, mut stop: watch::Receiver<bool>) {
                 return;
             }
             if !rule.trigger.is_empty() {
-                let newest = rest.get(&format!("/channels/{}/messages?limit={}", rule.channel, guard::TRIGGER_LOOKBACK)).await.unwrap_or(Value::Null);
+                let mut newest = rest.get(&format!("/channels/{}/messages?limit={}", rule.channel, guard::TRIGGER_LOOKBACK)).await.unwrap_or(Value::Null);
+                // A trigger word in an encrypted DM is only found in the opened text.
+                for m in newest.as_array_mut().into_iter().flatten() {
+                    e2e_open_for(&app, m);
+                }
                 if newest.as_array().is_some_and(|list| list.iter().any(|m| rule.is_trigger(m, &me))) {
                     guard_wipe(app.clone(), rule.clone()).await;
                     continue;
@@ -2159,9 +2849,57 @@ fn settings_save(app: AppHandle, state: State<App>, settings: Value) -> Result<V
     Ok(saved)
 }
 
-fn apply_desktop(_app: &AppHandle, state: &App, settings: &Value) {
+fn apply_desktop(app: &AppHandle, state: &App, settings: &Value) {
+    apply_shortcuts(app, &settings["voice"]);
     state.close_to_tray.store(settings["closeToTray"] != false, Ordering::Relaxed);
     *state.notify.lock().unwrap() = settings["notify"].as_str().unwrap_or("name").to_owned();
+    // Voice & Video: kept for the next call, and applied to the one going on.
+    let voice = call::VoiceSettings::from(&settings["voice"]);
+    if let Some(a) = state.live.lock().unwrap().as_ref().and_then(|l| l.calls.active.as_ref()) {
+        if let Some(m) = &a.media {
+            m.apply_settings(&voice, &a.volumes);
+            m.set_controls(effective_mute(a, &voice), a.deafened);
+        }
+    }
+    *state.voice.lock().unwrap() = voice;
+}
+
+// Global mute and deafen keys (Voice & Video): off unless set, and they work while LockCord is in
+// the background too. Re-registered whenever the settings change.
+fn apply_shortcuts(app: &AppHandle, voice: &Value) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    let shortcuts = app.global_shortcut();
+    let _ = shortcuts.unregister_all();
+    for (key, deafen) in [("muteKey", false), ("deafenKey", true)] {
+        let Some(keys) = voice[key].as_str().filter(|k| !k.is_empty()) else { continue };
+        let _ = shortcuts.on_shortcut(keys, move |app, _, event| {
+            if event.state == ShortcutState::Pressed {
+                toggle_call_control(app, deafen);
+            }
+        });
+    }
+}
+
+// The mute or deafen key: flips it in the call this device is in.
+fn toggle_call_control(app: &AppHandle, deafen: bool) {
+    let state = app.state::<App>();
+    let settings = voice_settings(&state);
+    let mut guard = state.live.lock().unwrap();
+    let Some(live) = guard.as_mut() else { return };
+    let Some(a) = live.calls.active.as_mut() else { return };
+    if deafen {
+        a.deafened = !a.deafened;
+    } else {
+        a.muted = !a.muted;
+        if !a.muted {
+            a.deafened = false;
+        }
+    }
+    if let Some(m) = &a.media {
+        m.set_controls(effective_mute(a, &settings), a.deafened);
+    }
+    send_voice_state(live);
+    call_changed(app, live);
 }
 
 // The channel on screen (notifications skip it while the window has focus).
@@ -2378,17 +3116,19 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // Started with Windows: with this profile, and marked so "start hidden" can apply.
         .plugin(tauri_plugin_autostart::Builder::new()
             .args(["--autostart".to_owned(), format!("--profile={profile}")])
             .app_name(if profile == "default" { "LockCord".to_owned() } else { format!("LockCord ({profile})") })
             .build())
         .manage(App { profile: profile.clone(), safe_mode: std::env::args().any(|a| a == "--safe-mode"), http, live: Mutex::new(None), media: Mutex::new(media::Cache::default()), nonces: AtomicU64::new(0), captcha: Arc::new(captcha::Showing::default()),
-            media_http: media::client(), viewing: Mutex::new(None), close_to_tray: AtomicBool::new(true), notify: Mutex::new("name".into()) })
+            media_http: media::client(), viewing: Mutex::new(None), close_to_tray: AtomicBool::new(true), notify: Mutex::new("name".into()),
+            voice: Mutex::new(call::VoiceSettings::from(&Value::Null)), frames: Arc::new(call::Frames::default()), mic_test: Mutex::new(None) })
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
         .register_uri_scheme_protocol(settings::SCHEME, serve_theme_asset)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, theme_get, theme_save, theme_delete, theme_asset_add, theme_asset_remove, theme_import, theme_export, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, theme_get, theme_save, theme_delete, theme_asset_add, theme_asset_remove, theme_import, theme_export, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);
@@ -2511,14 +3251,14 @@ mod tests {
             guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound: mpsc::channel(1).0, subscribed: None,
             queue: deletion::Queue::start(Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()))), guard: Vec::new(), wiping: HashSet::new(), purge: None,
             e2e: E2eState { identity: Some(mine), book, pinned: HashSet::from(["200".to_owned()]), answering: HashSet::new(), problem: None },
-            my_status: Value::Null, dm_ok: HashSet::new(),
+            my_status: Value::Null, dm_ok: HashSet::new(), calls: call::Calls::default(),
         };
         (live, theirs, bob)
     }
 
     #[tokio::test]
     async fn encrypted_dms_open_only_where_they_belong() {
-        let (live, theirs, bob) = e2e_live(true);
+        let (mut live, theirs, bob) = e2e_live(true);
         let id = deletion::snowflake_at(deletion::now_ms()).to_string();
         let sealed = theirs.seal(&bob, "100", "555", "200", "meet at 6", deletion::now_ms()).unwrap();
         let mut m = json!({ "id": id, "channel_id": "555", "author": { "id": "200" }, "content": sealed });
@@ -2561,7 +3301,7 @@ mod tests {
             relationships: Vec::new(), presences: HashMap::new(), reads: HashMap::new(),
             guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound: mpsc::channel(1).0, subscribed: None,
             queue: deletion::Queue::start(Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()))), guard: Vec::new(), wiping: HashSet::new(), purge: None, e2e: E2eState::default(),
-            my_status: Value::Null, dm_ok: HashSet::new(),
+            my_status: Value::Null, dm_ok: HashSet::new(), calls: call::Calls::default(),
         };
         live.note_own(&json!({ "id": "10", "author": { "id": "1" } }));
         live.note_own(&json!({ "id": "11", "author": { "id": "2" } }));

@@ -14,11 +14,14 @@ use std::collections::{HashMap, HashSet};
 
 pub const ADMINISTRATOR: u64 = 1 << 3;
 pub const ADD_REACTIONS: u64 = 1 << 6;
+pub const STREAM: u64 = 1 << 9;
 pub const VIEW_CHANNEL: u64 = 1 << 10;
 pub const SEND_MESSAGES: u64 = 1 << 11;
 pub const MANAGE_MESSAGES: u64 = 1 << 13;
 pub const ATTACH_FILES: u64 = 1 << 15;
 pub const READ_MESSAGE_HISTORY: u64 = 1 << 16;
+pub const CONNECT: u64 = 1 << 20;
+pub const SPEAK: u64 = 1 << 21;
 pub const MANAGE_THREADS: u64 = 1 << 34;
 pub const SEND_MESSAGES_IN_THREADS: u64 = 1 << 38;
 pub const PIN_MESSAGES: u64 = 1 << 51;
@@ -253,6 +256,7 @@ impl Guild {
             "topic": c["topic"], "last_message_id": c["last_message_id"], "nsfw": c["nsfw"],
             "can_send": has(SEND_MESSAGES), "can_history": has(READ_MESSAGE_HISTORY), "can_react": has(ADD_REACTIONS),
             "can_attach": has(ATTACH_FILES), "can_manage": has(MANAGE_MESSAGES), "can_pin": has(MANAGE_MESSAGES) || has(PIN_MESSAGES),
+            "can_connect": has(CONNECT), "can_speak": has(SPEAK), "can_stream": has(STREAM), "user_limit": c["user_limit"],
             "member_list": member_list_id(self.role_bits(&self.id), overwrites),
             "available_tags": c["available_tags"].as_array().map(|tags| tags.iter().take(20).map(|t| json!({ "id": t["id"], "name": t["name"], "emoji": t["emoji_name"] })).collect::<Vec<_>>()),
         }))

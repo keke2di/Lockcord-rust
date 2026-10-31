@@ -3,7 +3,8 @@
 // how far it got, and ask before anything is deleted.
 
 import { h, icon, ICONS } from './dom.js';
-import { dropdown, radioCards, toggle } from './controls.js';
+import { dropdown, radioCards, slider, toggle } from './controls.js';
+import { shortCode } from './trust.js';
 
 const RANGES = [['all', 'All time'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days'], ['31d', 'Last 31 days']];
 const TTLS = [[0, 'Off'], [60, '1 minute'], [600, '10 minutes'], [3600, '1 hour'], [86400, '1 day'], [604800, '7 days'], [2592000, '30 days']];
@@ -43,17 +44,120 @@ export function renderApp(body, ctx, redraw) {
       } }, 'Change…')))));
 }
 
+// --- Voice & Video --------------------------------------------------------------------------------
+
+const KEY_NAMES = { Backquote: '`', Space: 'Space', CapsLock: 'Caps Lock', ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ControlLeft: 'Left Ctrl', ControlRight: 'Right Ctrl', AltLeft: 'Left Alt', AltRight: 'Right Alt' };
+const keyName = (code) => KEY_NAMES[code] || String(code || '').replace(/^Key|^Digit/, '');
+
+// ctx: { appSettings(), saveAppSetting(change), voiceDevices(), voiceTest(on), voiceTestLevel(), toast }
+// Returns a function that stops the microphone test (when the page is left).
+export function renderVoice(body, ctx, redraw) {
+  const v = ctx.appSettings().voice || {};
+  const save = (change) => ctx.saveAppSetting({ voice: { ...(ctx.appSettings().voice || {}), ...change } });
+  // Sliders save once they settle, not on every step.
+  let settle = null;
+  const saveSoon = (change) => { clearTimeout(settle); settle = setTimeout(() => save(change), 300); };
+  const devices = h('div', null, h('div', { class: 'control-description' }, 'Looking for devices…'));
+  body.appendChild(section('Devices', devices));
+  ctx.voiceDevices().then((d) => {
+    devices.textContent = '';
+    const pick = (title, list, key) => block(title, null, dropdown([{ value: '', label: 'Default' }, ...(list || []).map((x) => ({ value: x.id, label: x.name }))],
+      v[key] || '', (value) => { save({ [key]: value || null }); redraw(); }, title));
+    devices.append(pick('Microphone', d && d.inputs, 'input'), pick('Speakers', d && d.outputs, 'output'), pick('Camera', d && d.cameras, 'camera'));
+  }).catch(() => { devices.textContent = 'Couldn’t list your devices.'; });
+
+  body.appendChild(section('Levels',
+    slider({ title: 'Microphone volume', min: 0, max: 200, step: 5, value: v.inputGain ?? 100, marks: [0, 100, 200], format: (n) => n + '%', onInput: (n) => saveSoon({ inputGain: n }) }),
+    slider({ title: 'Speaker volume', min: 0, max: 200, step: 5, value: v.outputGain ?? 100, marks: [0, 100, 200], format: (n) => n + '%', onInput: (n) => saveSoon({ outputGain: n }) })));
+
+  // The microphone test: your own voice, processed as in a call, played back; nothing is sent.
+  let testing = false;
+  let poll = null;
+  const meter = h('div', { class: 'mic-meter' }, h('div', { class: 'mic-meter-fill' }));
+  const stop = () => { clearInterval(poll); poll = null; if (testing) { testing = false; ctx.voiceTest(false).catch(() => {}); } };
+  const testButton = h('button', { type: 'button', class: 'button secondary', onclick: () => {
+    if (testing) { stop(); testButton.textContent = 'Let’s check'; meter.firstChild.style.width = '0'; return; }
+    ctx.voiceTest(true).then(() => {
+      testing = true;
+      testButton.textContent = 'Stop testing';
+      poll = setInterval(() => ctx.voiceTestLevel().then((db) => {
+        const pct = db == null ? 0 : Math.max(0, Math.min(100, ((db + 70) / 70) * 100));
+        meter.firstChild.style.width = pct + '%';
+      }).catch(() => {}), 100);
+    }).catch((e) => ctx.toast(String(e)));
+  } }, 'Let’s check');
+  body.appendChild(section('Microphone test', h('div', { class: 'control-description' }, 'Talk and hear yourself back, with the same processing as in a call. Use headphones. Nothing leaves this computer.'),
+    h('div', { class: 'mic-test' }, testButton, meter)));
+
+  const keyButton = h('button', { type: 'button', class: 'button secondary', onclick: () => {
+    keyButton.textContent = 'Press a key…';
+    const take = (e) => {
+      e.preventDefault();
+      document.removeEventListener('keydown', take, true);
+      if (e.code !== 'Escape') save({ pttKey: e.code });
+      redraw();
+    };
+    document.addEventListener('keydown', take, true);
+  } }, keyName(v.pttKey || 'Backquote'));
+  body.appendChild(section('Input mode',
+    radioCards([
+      { value: 'vad', label: 'Voice activity', description: 'Your microphone sends when you speak.' },
+      { value: 'ptt', label: 'Push to talk', description: 'Hold the key while LockCord is in front (not while typing).' },
+    ], v.mode === 'ptt' ? 'ptt' : 'vad', (mode) => { save({ mode }); redraw(); }),
+    v.mode === 'ptt' ? block('Push-to-talk key', null, keyButton) : null,
+    v.mode !== 'ptt' ? toggle('Automatically decide when you’re speaking', null, v.sensitivity === null, (auto) => { save({ sensitivity: auto ? null : -55 }); redraw(); }) : null,
+    v.mode !== 'ptt' && v.sensitivity !== null ? slider({ title: 'Sensitivity', description: 'Sounds quieter than this aren’t sent.', min: -80, max: 0, step: 1, value: v.sensitivity ?? -55, marks: [-80, -40, 0], format: (n) => n + ' dB', onInput: (n) => saveSoon({ sensitivity: n }) }) : null));
+
+  // Global mute and deafen keys: a modifier and a key, working with LockCord in the background.
+  const shortcutButton = (key) => {
+    const current = v[key] || '';
+    const button = h('button', { type: 'button', class: 'button secondary', onclick: () => {
+      button.textContent = 'Press keys… (Esc cancels)';
+      const take = (e) => {
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+        e.preventDefault();
+        document.removeEventListener('keydown', take, true);
+        const mods = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean);
+        if (e.code !== 'Escape' && mods.length) save({ [key]: [...mods, e.code].join('+') });
+        else if (e.code !== 'Escape') ctx.toast('Use Ctrl, Shift or Alt with the key.');
+        redraw();
+      };
+      document.addEventListener('keydown', take, true);
+    } }, current ? current.replace(/Key|Digit/g, '') : 'Not set');
+    return h('div', { class: 'file-pick' }, button,
+      current ? h('button', { type: 'button', class: 'button link', onclick: () => { save({ [key]: '' }); redraw(); } }, 'Clear') : null);
+  };
+  body.appendChild(section('Keybinds',
+    h('div', { class: 'control-description' }, 'Mute or deafen from anywhere, even with LockCord in the background. Off until you set them.'),
+    block('Toggle mute', null, shortcutButton('muteKey')),
+    block('Toggle deafen', null, shortcutButton('deafenKey'))));
+
+  body.appendChild(section('Processing',
+    block('Noise suppression', null, dropdown([
+      { value: 'rnnoise', label: 'Standard (RNNoise)' },
+      { value: 'webrtc', label: 'WebRTC' },
+      { value: 'off', label: 'Off' },
+    ], v.noise || 'rnnoise', (noise) => { save({ noise }); redraw(); }, 'Noise suppression')),
+    toggle('Echo cancellation', 'Keeps your speakers out of your microphone.', v.echo !== false, (echo) => save({ echo })),
+    toggle('Automatic gain', 'Evens out how loud you are.', v.agc !== false, (agc) => save({ agc }))));
+
+  body.appendChild(h('div', { class: 'notice' },
+    h('div', null, 'Calls go to Discord’s voice servers directly, as Discord’s own app does, so Discord sees your IP address. Voice, camera and screen are end-to-end encrypted with Discord’s DAVE protocol: compare the call’s code to check it.'),
+    h('div', null, 'Your microphone, camera and screen open only during a call or this test. Nothing is recorded or kept.')));
+  return stop;
+}
+
 // --- Encrypted DMs ------------------------------------------------------------------------------
 
-const E2E_STATUS = { on: 'Encrypted', waiting: 'Waiting for their LockCord', changed: '⚠ Their key changed', lost: '⚠ Keys missing', off: 'Off' };
+const E2E_STATUS = { on: 'Encrypted', waiting: 'Waiting for their LockCord', offered: 'Offered: answer in the DM', changed: '⚠ Their key changed', lost: '⚠ Keys missing', off: 'Off' };
 
 // ctx: { e2eStatus() (main.rs e2e_view), e2eForget(peerId), e2eVerify(peerId, v), peerName(peerId), toast }
 export function renderE2e(body, ctx, redraw) {
   const view = ctx.e2eStatus();
   body.appendChild(h('div', { class: 'notice' },
     h('div', null, 'An encrypted DM is your normal DM with another LockCord user, end-to-end encrypted: Discord stores only ciphertext, and only your two LockCords can read it. The messages stay in the DM, readable later; for a live, off-the-record chat use a secret chat instead.'),
-    h('div', null, 'To turn it on, press “Encrypt” in a DM’s header. LockCord posts its public key there once; their LockCord answers by itself. Your secret key never leaves Windows Credential Manager.'),
-    h('div', null, 'Compare the safety code with them once, on a call. If their key ever changes, LockCord stops sending to them until you check it. Text only for now: files go unencrypted, and only on purpose.')));
+    h('div', null, 'To turn it on, press “Encrypt” in a DM’s header. LockCord posts its public key there once; their LockCord asks them, and answers once they accept. Your secret key stays on this computer, in Windows Credential Manager, encrypted for your Windows account (it never roams to other machines).'),
+    h('div', null, 'Compare the 60-digit safety code with them once, on a call. If their key ever changes, LockCord stops sending to them until you check it. Text only for now: files go unencrypted, and only on purpose. There is no forward secrecy: anyone who later got your secret key could read your past encrypted DMs, so “Turn off” when you’re done with someone.')));
   if (view.problem) body.appendChild(h('div', { class: 'notice warn' }, view.problem));
   const contacts = (view.contacts || []).filter((c) => c.status !== 'off');
   if (!contacts.length) {
@@ -63,7 +167,7 @@ export function renderE2e(body, ctx, redraw) {
   body.appendChild(section('Encrypted DMs', h('div', { class: 'theme-rows' }, contacts.map((c) => h('div', { class: 'theme-row' },
     h('span', { class: 'guard-shield' + (c.status === 'on' ? '' : ' warn') }, icon(ICONS.lock, 20)),
     h('div', { class: 'theme-row-text' }, h('div', { class: 'theme-row-name' }, ctx.peerName(c.peer)),
-      h('div', { class: 'control-description' }, E2E_STATUS[c.status] + (c.safety ? ' · safety code ' + c.safety : '') + (c.verified ? ' · compared ✓' : '')
+      h('div', { class: 'control-description' }, E2E_STATUS[c.status] + (c.safety ? ' · safety code ' + shortCode(c.safety) : '') + (c.verified ? ' · compared ✓' : '')
         + (c.since ? ' · since ' + new Date(c.since).toLocaleDateString() : ''))),
     c.status === 'on' ? h('button', { type: 'button', class: 'button secondary', onclick: () => ctx.e2eVerify(c.peer, !c.verified).then(redraw).catch((e) => ctx.toast(String(e))) }, c.verified ? 'Unmark compared' : 'Mark compared') : null,
     h('button', { type: 'button', class: 'button danger-outline', onclick: (e) => {

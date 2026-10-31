@@ -13,7 +13,6 @@
 use crate::fingerprint;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-const SERVICE: &str = "LockCord";
 const HANDOFF_HOST: &str = "lockcord.invalid";
 pub const LOGIN_LABEL: &str = "login";
 
@@ -59,22 +58,21 @@ pub fn plausible_token(token: &str) -> bool {
     (16..=2048).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_graphic())
 }
 
-fn entry(profile: &str) -> Option<keyring::Entry> {
-    keyring::Entry::new(SERVICE, &format!("discord-session:{profile}")).ok()
+// The session in the vault (vault.rs): Credential Manager, this machine only, DPAPI-wrapped.
+fn name(profile: &str) -> String {
+    format!("discord-session:{profile}")
 }
 
 pub fn load(profile: &str) -> Option<String> {
-    entry(profile)?.get_password().ok().filter(|t| plausible_token(t))
+    crate::vault::get(&name(profile)).map(|t| t.to_string()).filter(|t| plausible_token(t))
 }
 
 pub fn save(profile: &str, token: &str) -> bool {
-    entry(profile).map(|e| e.set_password(token).is_ok()).unwrap_or(false)
+    crate::vault::set(&name(profile), token).is_ok()
 }
 
 pub fn forget(profile: &str) {
-    if let Some(e) = entry(profile) {
-        let _ = e.delete_credential();
-    }
+    crate::vault::delete(&name(profile));
 }
 
 // Only Discord, and the captcha it embeds, may load in the login window.

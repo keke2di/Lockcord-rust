@@ -9,7 +9,7 @@ import { colourTile, dropdown, radioCards, slider, toggle } from './controls.js'
 import { parse, render } from './markdown.js';
 import { avatar, displayName } from './people.js';
 import { applyTheme, OPTIONS, PRESETS } from './theme.js';
-import { renderApp, renderE2e, renderGuard, renderPurge, renderTranslation } from './tools.js';
+import { renderApp, renderE2e, renderGuard, renderPurge, renderTranslation, renderVoice } from './tools.js';
 
 const COLOR_GROUPS = [
   ['Backgrounds', [['--lc-chat-bg', 'Chat'], ['--lc-sidebar', 'Side panel'], ['--lc-rail', 'Server rail'], ['--lc-panel', 'User panel'],
@@ -51,6 +51,7 @@ const PAGES = [
   ['css', 'Custom CSS', 'code', []],
   ['themes', 'Theme files', 'folder', []],
   ['app', 'App', 'gear', []],
+  ['voice', 'Voice & Video', 'mic', []],
   ['e2e', 'Encrypted DMs', 'lock', []],
   ['translation', 'Translation', 'globe', []],
   ['purge', 'Purge', 'trash', []],
@@ -148,12 +149,15 @@ export function renderSettings(screen, ctx) {
     }
   };
 
+  // What a page leaves running (Voice & Video's microphone test), stopped when it's redrawn or left.
+  let cleanup = null;
   const draw = () => {
     const keep = scroll.scrollTop;
+    if (cleanup) { cleanup(); cleanup = null; }
     drawNav();
     title.textContent = PAGES.find((p) => p[0] === page)[1];
     body.textContent = '';
-    ({ appearance, effects, css, themes, app, e2e, translation, purge, guard })[page]();
+    ({ appearance, effects, css, themes, app, voice, e2e, translation, purge, guard })[page]();
     drawBar();
     drawFloating();
     scroll.scrollTop = keep;
@@ -409,10 +413,11 @@ export function renderSettings(screen, ctx) {
   const translation = () => renderTranslation(body, ctx, draw);
   const e2e = () => renderE2e(body, ctx, draw);
   const app = () => renderApp(body, ctx, draw);
+  const voice = () => { cleanup = renderVoice(body, ctx, draw); };
   const guard = () => { renderGuard(body, ctx, draw, presetChannel); presetChannel = null; };
   // Rust's purge progress redraws the Purge page while it's open.
   const stopListening = ctx.onPurge(() => { if (page === 'purge') draw(); });
 
   draw();
-  return () => stopListening();
+  return () => { stopListening(); if (cleanup) cleanup(); };
 }

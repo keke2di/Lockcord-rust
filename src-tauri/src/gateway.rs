@@ -20,6 +20,13 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::{Message, http::HeaderValue};
 
 const GATEWAY: &str = "wss://gateway.discord.gg";
+
+/// A secure WebSocket address on Discord's own gateway hosts.
+fn discord_gateway(address: &str) -> bool {
+    let Ok(url) = url::Url::parse(address) else { return false };
+    let host = url.host_str().unwrap_or("");
+    url.scheme() == "wss" && url.username().is_empty() && url.password().is_none() && (host == "discord.gg" || host.ends_with(".discord.gg") || host.ends_with(".discord.com"))
+}
 const MAX_WIRE: usize = 64 * 1024 * 1024;
 const ZLIB_SUFFIX: [u8; 4] = [0x00, 0x00, 0xff, 0xff];
 
@@ -222,7 +229,8 @@ async fn connection(token: &str, session: &mut Option<Session>, events: &mpsc::S
                 let name = payload["t"].as_str().unwrap_or("").to_owned();
                 let mut data = payload["d"].clone();
                 if name == "READY" {
-                    if let (Some(id), Some(url)) = (data["session_id"].as_str(), data["resume_gateway_url"].as_str()) {
+                    // The token goes to the resume address later: only ever one of Discord's.
+                    if let (Some(id), Some(url)) = (data["session_id"].as_str(), data["resume_gateway_url"].as_str().filter(|u| discord_gateway(u))) {
                         *session = Some(Session { id: id.to_owned(), seq: payload["s"].as_u64(), resume_url: url.to_owned() });
                     }
                     ready = true;
@@ -277,6 +285,16 @@ mod tests {
     use flate2::{Compress, Compression, FlushCompress};
 
     // Two messages on one deflate stream, the second split across frames, as Discord sends them.
+    #[test]
+    fn resume_only_to_discord() {
+        assert!(discord_gateway("wss://gateway-us-east1-b.discord.gg"));
+        assert!(discord_gateway("wss://gateway.discord.gg/"));
+        assert!(!discord_gateway("ws://gateway.discord.gg"), "not encrypted");
+        assert!(!discord_gateway("wss://gateway.discord.gg.evil.example"));
+        assert!(!discord_gateway("wss://evildiscord.gg"));
+        assert!(!discord_gateway("https://gateway.discord.gg"));
+    }
+
     #[test]
     fn inflates_a_zlib_stream_across_frames() {
         let mut z = Compress::new(Compression::default(), true);

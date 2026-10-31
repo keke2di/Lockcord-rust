@@ -6,7 +6,7 @@
 import { h, icon, ICONS, formatBytes, sameDay, stamp, shortTime, formatTime } from './dom.js';
 import { parse, render, jumbo, plain } from './markdown.js';
 import { avatar, displayName, nameOf, remember } from './people.js';
-import { encryptedMark, secretCard } from './trust.js';
+import { encryptedMark, plainMark, secretCard } from './trust.js';
 
 const GROUP_GAP_MS = 7 * 60 * 1000;
 
@@ -92,6 +92,8 @@ export function renderTimeline(list, items, ctx) {
       list.appendChild(safely(() => secretRow(item, prev, md, ctx), item));
     } else if (item.kind === 'card') {
       list.appendChild(card(item.chat, ctx));
+    } else if (item.kind === 'offer') {
+      list.appendChild(offerCard(ctx));
     } else if (item.kind === 'system') {
       list.appendChild(h('li', { class: 'system-message' }, icon(ICONS.lock, 14), ' ', item.r.text));
     }
@@ -438,8 +440,9 @@ function keyLine(m, d) {
 function e2eNote(body, m, d) {
   if (m.lc_e2e) {
     const text = body.querySelector('.content');
-    (text || body).appendChild(encryptedMark(!!m.lc_e2e_stale));
-    if (m.lc_e2e_stale) body.appendChild(h('div', { class: 'e2e-note warn' }, 'Sent long before it was posted: it may be an old message posted again.'));
+    (text || body).appendChild(encryptedMark(m.lc_e2e_replayed ? 'copy' : m.lc_e2e_stale ? 'stale' : null));
+    if (m.lc_e2e_replayed) body.appendChild(h('div', { class: 'e2e-note warn' }, 'A copy: this exact encrypted message was already posted here before, so someone posted it again.'));
+    else if (m.lc_e2e_stale) body.appendChild(h('div', { class: 'e2e-note warn' }, 'Sent long before it was posted: it may be an old message posted again.'));
   } else if (m.lc_e2e_failed) {
     body.appendChild(h('div', { class: 'e2e-note warn' }, 'This encrypted message couldn’t be decrypted: it was changed, or isn’t from who it says.'));
   } else if (m.lc_e2e_untrusted) {
@@ -447,7 +450,7 @@ function e2eNote(body, m, d) {
   } else if (m.lc_e2e_locked) {
     body.appendChild(h('div', { class: 'e2e-note' }, 'Encrypted message. You don’t have the key for it.'));
   } else if (d.e2eHere && m.content) {
-    body.appendChild(h('div', { class: 'e2e-note plain' }, 'Not encrypted'));
+    body.appendChild(h('div', { class: 'e2e-note plain' }, plainMark()));
   }
 }
 
@@ -564,6 +567,21 @@ function card(chat, ctx) {
     spec = { tone: 'quiet', spinner: true, text: [text] };
   }
   const li = h('li', { class: 'status-card' }, secretCard(spec));
+  li.style.setProperty('display', 'list-item', 'important');
+  li.style.setProperty('visibility', 'visible', 'important');
+  return li;
+}
+
+// The other side's LockCord offered to encrypt this DM: nothing is answered until the user says
+// so (answering tells them this account runs LockCord).
+function offerCard(ctx) {
+  const them = displayName(ctx.peer);
+  const li = h('li', { class: 'status-card' }, secretCard({
+    tone: 'gate', title: them + ' wants to encrypt this DM',
+    text: ['Their LockCord posted its key. Accepting posts yours, and from then on everything here is end-to-end encrypted: Discord stores only ciphertext. '
+      + 'Answering also tells ' + them + ' that you use LockCord. Ignoring posts nothing.'],
+    buttons: [{ label: 'Accept', yes: true, onclick: () => ctx.acceptOffer() }, { label: 'Ignore', onclick: () => ctx.ignoreOffer() }],
+  }));
   li.style.setProperty('display', 'list-item', 'important');
   li.style.setProperty('visibility', 'visible', 'important');
   return li;

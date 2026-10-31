@@ -2,13 +2,18 @@
 // sends. The UI never talks to Discord itself; even Discord's images come through Rust, by the
 // `lcmedia:` scheme (src-tauri/src/media.rs).
 
-const tauri = window.__TAURI__;
+// Tauri's own bridge, without the `window.__TAURI__` global (withGlobalTauri is off, so pages in
+// other windows, like Discord's login page, don't get it either).
+const bridge = window.__TAURI_INTERNALS__;
 
-export const call = (command, args) => tauri.core.invoke(command, args);
-export const on = (event, handler) => tauri.event.listen(event, (e) => handler(e.payload));
+export const call = (command, args, options) => bridge.invoke(command, args, options);
+export const on = (event, handler) => call('plugin:event|listen', {
+  event, target: { kind: 'Any' }, handler: bridge.transformCallback((e) => handler(e.payload)),
+});
+export const fileSrc = (path, scheme) => bridge.convertFileSrc(path, scheme);
 
 // A Discord media URL as this page may load it.
-export const media = (url) => (url ? tauri.core.convertFileSrc(url, 'lcmedia') : null);
+export const media = (url) => (url ? fileSrc(url, 'lcmedia') : null);
 
 export const api = {
   status: () => call('status'),
@@ -23,7 +28,7 @@ export const api = {
     plain: plain === true ? true : null,
   }),
   // One file's bytes, uploaded to Discord's bucket; the answer goes into send's attachments.
-  upload: (channelId, name, bytes, plain) => tauri.core.invoke('upload_attachment', bytes, { headers: { 'lc-channel': channelId, 'lc-name': encodeURIComponent(name), 'lc-plain': plain === true ? '1' : '0' } }),
+  upload: (channelId, name, bytes, plain) => call('upload_attachment', bytes, { headers: { 'lc-channel': channelId, 'lc-name': encodeURIComponent(name), 'lc-plain': plain === true ? '1' : '0' } }),
   edit: (channelId, messageId, content) => call('edit_message', { channelId, messageId, content }),
   deleteMessage: (channelId, messageId) => call('delete_message', { channelId, messageId }),
   react: (channelId, messageId, emoji, add) => call('react', { channelId, messageId, emoji, add }),
@@ -58,7 +63,7 @@ export const api = {
   themeGet: (id) => call('theme_get', { id }),
   themeSave: (theme) => call('theme_save', { theme }),
   themeDelete: (id) => call('theme_delete', { id }),
-  themeAssetAdd: (id, name, bytes) => tauri.core.invoke('theme_asset_add', bytes, { headers: { 'lc-theme': id, 'lc-name': encodeURIComponent(name) } }),
+  themeAssetAdd: (id, name, bytes) => call('theme_asset_add', bytes, { headers: { 'lc-theme': id, 'lc-name': encodeURIComponent(name) } }),
   themeAssetRemove: (id, name) => call('theme_asset_remove', { id, name }),
   // Native dialogs in Rust: the window never sees a path.
   themeImport: () => call('theme_import'),
@@ -79,6 +84,28 @@ export const api = {
   e2eAcceptChange: (peerId) => call('e2e_accept_change', { peerId }),
   e2eVerify: (peerId, verified) => call('e2e_verify', { peerId, verified }),
   e2eForget: (peerId) => call('e2e_forget', { peerId }),
+  // The other side's offer: answered (posts this side's key) or left alone (posts nothing).
+  e2eAcceptOffer: (peerId) => call('e2e_accept_offer', { peerId }),
+  e2eIgnoreOffer: (peerId) => call('e2e_ignore_offer', { peerId }),
+  // Calls (call.rs): voice, camera and screen sharing; media stays in Rust.
+  callJoin: (channelId) => call('call_join', { channelId }),
+  callLeave: () => call('call_leave'),
+  callDecline: (channelId) => call('call_decline', { channelId }),
+  callPeek: (channelId) => call('call_peek', { channelId }),
+  callControls: (muted, deafened) => call('call_controls', { muted, deafened }),
+  callPtt: (held) => call('call_ptt', { held }),
+  callCamera: (on) => call('call_camera', { on }),
+  callVolume: (userId, percent) => call('call_volume', { userId, percent }),
+  callShareSources: () => call('call_share_sources'),
+  callShare: (kind, id, height, fps, audio) => call('call_share', { kind, id, height, fps, audio }),
+  callShareStop: () => call('call_share_stop'),
+  callWatch: (userId) => call('call_watch', { userId }),
+  callWatchStop: () => call('call_watch_stop'),
+  // A video tile's newest picture as raw bytes (empty if nothing newer than `since`).
+  callFrame: (key, since, maxWidth) => call('call_frame', { key, since, maxWidth }),
+  voiceDevices: () => call('voice_devices'),
+  voiceTest: (on) => call('voice_test', { on }),
+  voiceTestLevel: () => call('voice_test_level'),
   // The desktop (desktop.rs): which chat is on screen, saving files to a folder Rust keeps.
   viewing: (channelId) => call('viewing', { channelId: channelId || null }),
   saveMedia: (files) => call('save_media', { files }),

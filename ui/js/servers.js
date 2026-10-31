@@ -91,14 +91,15 @@ export function firstChannel(guild, last) {
 const CHANNEL_GLYPH = { 0: '#', 5: '📢', 15: '💬', 16: '🖼️', 2: '🔊', 13: '🎙️' };
 
 // ctx: { guild, current, unread(channel), mentions(channel), muted(channel), open(channel),
-//        unsupported(channel), threads(channel): the threads listed under it }
+//        unsupported(channel), threads(channel): the threads listed under it,
+//        voiceRoom(channel): who is in a voice channel (call.js), or null }
 export function renderChannels(list, ctx) {
   list.textContent = '';
   for (const group of grouped(ctx.guild)) {
     if (group.category) list.appendChild(h('div', { class: 'channel-category' }, group.category.name || ''));
     for (const c of group.channels) {
       const text = TEXT_TYPES.has(c.type);
-      const opens = text || FORUMS.has(c.type);
+      const opens = text || FORUMS.has(c.type) || c.type === 2;
       const count = text ? ctx.mentions(c) : 0;
       const cls = 'channel' + (c.id === ctx.current ? ' selected' : '') + (text && c.id !== ctx.current && ctx.unread(c) && !ctx.muted(c) ? ' unread' : '')
         + (ctx.muted(c) ? ' muted' : '') + (opens ? '' : ' inert');
@@ -108,6 +109,9 @@ export function renderChannels(list, ctx) {
       }, h('span', { class: 'channel-glyph', 'aria-hidden': 'true' }, CHANNEL_GLYPH[c.type] || '#'),
         h('span', { class: 'channel-name' }, c.name || ''),
         count ? h('span', { class: 'badge' }, count > 99 ? '99+' : String(count)) : null));
+      // A voice channel's people, under it.
+      const room = c.type === 2 && ctx.voiceRoom ? ctx.voiceRoom(c) : null;
+      if (room) list.appendChild(room);
       // The threads this account is in, under their channel, as Discord lists them.
       for (const t of ctx.threads(c)) {
         const tCount = ctx.mentions(t);

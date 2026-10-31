@@ -4,7 +4,7 @@
 // Themes the user saved were checked by Rust (settings.rs); values typed into the editor are
 // checked here the same way before they're previewed.
 
-const tauri = window.__TAURI__;
+import { fileSrc } from './api.js';
 
 // The options and their values; the first is the default (settings.rs OPTIONS).
 export const OPTIONS = {
@@ -112,7 +112,7 @@ document.adoptedStyleSheets = [...document.adoptedStyleSheets, tokenSheet, userS
 
 // A theme file's asset, as the window may load it (settings.rs serves lctheme:).
 export function assetUrl(themeId, name) {
-  return tauri.core.convertFileSrc(themeId + '/' + name, 'lctheme');
+  return fileSrc(themeId + '/' + name, 'lctheme');
 }
 
 let current = DISCORD_DARK;

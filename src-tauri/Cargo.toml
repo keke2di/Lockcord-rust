@@ -1,9 +1,13 @@
 [package]
 name = "lockcord"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 
 [dependencies]
+discord-voice = { path = "voice" }
+client_core = { package = "lockcord-voice-core", path = "voice/support/client-core" }
+model = { package = "lockcord-voice-model", path = "voice/support/model" }
+platform = { package = "lockcord-voice-platform", path = "voice/support/platform" }
 aes-gcm = "0.10"
 base64 = "0.23.1"
 flate2 = "1.1.10"
@@ -22,16 +26,28 @@ sys-locale = "0.3.2"
 tauri = { version = "2", default-features = false, features = ["wry", "compression", "common-controls-v6", "image-png", "image-ico", "tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 url = "2.5.8"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Security_Cryptography"] }
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
 zeroize = "1"
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
+
+# Calls: Serein's voice crate (voice/) and the small copies of the Serein crates it uses.
+[workspace]
+members = ["voice", "voice/support/client-core", "voice/support/model", "voice/support/platform"]
+
+# As Serein patches them (vendor/*/SEREIN-PATCH.md): davey without OpenMLS's browser timers, and
+# hpke-rs with its affected SHAKE dependency replaced by RustCrypto sha3.
+[patch.crates-io]
+davey = { path = "vendor/davey" }
+hpke-rs = { path = "vendor/hpke-rs" }
 
 # Small debug info keeps the build folder (on D:) from ballooning.
 [profile.dev]
@@ -39,6 +55,41 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Per-packet and per-frame media work (codecs, DAVE and transport crypto, echo cancellation,
+# noise suppression) has to keep up in real time in dev builds too.
+[profile.dev.package.discord-voice]
+opt-level = 3
+[profile.dev.package.lockcord-voice-platform]
+opt-level = 3
+[profile.dev.package.opus2]
+opt-level = 3
+[profile.dev.package.libopus_sys]
+opt-level = 3
+[profile.dev.package.openh264]
+opt-level = 3
+[profile.dev.package.openh264-sys2]
+opt-level = 3
+[profile.dev.package.davey]
+opt-level = 3
+[profile.dev.package.aes-gcm]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.ghash]
+opt-level = 3
+[profile.dev.package.chacha20]
+opt-level = 3
+[profile.dev.package.chacha20poly1305]
+opt-level = 3
+[profile.dev.package.poly1305]
+opt-level = 3
+[profile.dev.package.sonora]
+opt-level = 3
+[profile.dev.package.nnnoiseless]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
 
 [profile.release]
 lto = "fat"

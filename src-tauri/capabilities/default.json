@@ -62,6 +62,25 @@
     "allow-forum-posts",
     "allow-poll-vote",
     "allow-search",
-    "allow-thread-open"
+    "allow-thread-open",
+    "allow-e2e-accept-offer",
+    "allow-e2e-ignore-offer",
+    "allow-call-join",
+    "allow-call-leave",
+    "allow-call-decline",
+    "allow-call-peek",
+    "allow-call-controls",
+    "allow-call-ptt",
+    "allow-call-camera",
+    "allow-call-volume",
+    "allow-call-share-sources",
+    "allow-call-share",
+    "allow-call-share-stop",
+    "allow-call-watch",
+    "allow-call-watch-stop",
+    "allow-call-frame",
+    "allow-voice-devices",
+    "allow-voice-test",
+    "allow-voice-test-level"
   ]
 }

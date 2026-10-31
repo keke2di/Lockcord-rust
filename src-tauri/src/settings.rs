@@ -263,6 +263,7 @@ pub fn clean_settings(raw: &Value) -> Value {
         "startHidden": raw["startHidden"].as_bool().unwrap_or(false),
         // Notifications: "off", "name" (who, not what) or "text" (the message too).
         "notify": raw["notify"].as_str().filter(|n| ["off", "name", "text"].contains(n)).unwrap_or("name"),
+        "voice": clean_voice(&raw["voice"]),
         "translate": {
             "defaults": clean_translation(&raw["translate"]["defaults"]),
             "channels": raw["translate"]["channels"].as_object().map(|m| m.iter()
@@ -271,6 +272,35 @@ pub fn clean_settings(raw: &Value) -> Value {
                 .map(|(id, v)| (id.clone(), clean_translation(v)))
                 .collect::<Map<String, Value>>()).unwrap_or_default(),
         },
+    })
+}
+
+// A global shortcut as the window records it ("Ctrl+Shift+M"): at least one modifier and a key.
+fn shortcut(v: &Value) -> &str {
+    v.as_str().filter(|k| k.len() <= 40 && k.contains('+') && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+')).unwrap_or("")
+}
+
+// Voice & Video (call.rs VoiceSettings): devices by their system ids, levels 0-200%, voice
+// activity or push-to-talk (a KeyboardEvent code), the microphone's processing, and people's
+// volumes.
+fn clean_voice(raw: &Value) -> Value {
+    let device = |k: &str| raw[k].as_str().filter(|d| !d.is_empty() && d.len() <= 512 && !d.contains(' ')).map(|d| json!(d)).unwrap_or(Value::Null);
+    let pct = |k: &str| raw[k].as_u64().map(|p| p.min(200)).unwrap_or(100);
+    let key = raw["pttKey"].as_str().filter(|k| !k.is_empty() && k.len() <= 32 && k.bytes().all(|b| b.is_ascii_alphanumeric())).unwrap_or("Backquote");
+    let sensitivity = if raw.get("sensitivity").is_some_and(Value::is_null) { Value::Null } else { json!(raw["sensitivity"].as_i64().unwrap_or(-55).clamp(-80, 0)) };
+    json!({
+        "input": device("input"), "output": device("output"), "camera": device("camera"),
+        "inputGain": pct("inputGain"), "outputGain": pct("outputGain"),
+        "mode": if raw["mode"] == "ptt" { "ptt" } else { "vad" }, "pttKey": key,
+        "muteKey": shortcut(&raw["muteKey"]), "deafenKey": shortcut(&raw["deafenKey"]),
+        "sensitivity": sensitivity,
+        "noise": raw["noise"].as_str().filter(|n| ["rnnoise", "webrtc", "off"].contains(n)).unwrap_or("rnnoise"),
+        "echo": raw["echo"].as_bool().unwrap_or(true), "agc": raw["agc"].as_bool().unwrap_or(true),
+        "volumes": raw["volumes"].as_object().map(|m| m.iter()
+            .filter(|(id, v)| (1..=20).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit()) && v.is_u64())
+            .take(64)
+            .map(|(id, v)| (id.clone(), json!(v.as_u64().unwrap_or(100).min(200))))
+            .collect::<Map<String, Value>>()).unwrap_or_default(),
     })
 }
 

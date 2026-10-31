@@ -85,6 +85,12 @@ impl Filters {
             return false;
         }
         if !self.keywords.is_empty() {
+            // An encrypted message that couldn't be opened: its words are unknown, so a keyword
+            // filter never deletes it, whichever way it points.
+            let unreadable = ["lc_e2e_locked", "lc_e2e_failed", "lc_e2e_untrusted"].iter().any(|k| m[*k] == true) || m["content"].as_str().is_some_and(crate::e2e::is_lc1);
+            if unreadable {
+                return false;
+            }
             let content = m["content"].as_str().unwrap_or("").to_lowercase();
             let hit = self.keywords.iter().any(|k| content.contains(k.as_str()));
             if hit != self.only {
@@ -98,8 +104,9 @@ impl Filters {
 // --- Collecting -------------------------------------------------------------------------------
 
 /// The ids of your messages in a channel that match, newest first, down to `min_id`. Stops when
-/// `cancel` turns true; `progress` hears the count after each page.
-pub async fn collect(rest: &Rest, channel: &str, me: &str, filters: &Filters, min_id: Option<u64>, cancel: &AtomicBool, mut progress: impl FnMut(usize)) -> Result<Vec<String>, String> {
+/// `cancel` turns true; `progress` hears the count after each page. `open` decrypts an encrypted
+/// DM's messages first (main.rs e2e_open), so keywords match what was written, not ciphertext.
+pub async fn collect(rest: &Rest, channel: &str, me: &str, filters: &Filters, min_id: Option<u64>, cancel: &AtomicBool, mut progress: impl FnMut(usize), open: impl Fn(&mut Value)) -> Result<Vec<String>, String> {
     let mut ids = Vec::new();
     let mut before: Option<String> = None;
     loop {
@@ -111,14 +118,15 @@ pub async fn collect(rest: &Rest, channel: &str, me: &str, filters: &Filters, mi
             path.push_str(&format!("&before={b}"));
         }
         let page = rest.get(&path).await.map_err(|e| e.to_string())?;
-        let list = page.as_array().cloned().unwrap_or_default();
-        for m in &list {
-            let id = m["id"].as_str().unwrap_or("");
+        let mut list = page.as_array().cloned().unwrap_or_default();
+        for m in &mut list {
+            let id = m["id"].as_str().unwrap_or("").to_owned();
             if min_id.is_some_and(|floor| id.parse::<u64>().unwrap_or(0) < floor) {
                 return Ok(ids);
             }
+            open(m);
             if filters.matches(m, me) {
-                ids.push(id.to_owned());
+                ids.push(id);
             }
         }
         progress(ids.len());
@@ -216,6 +224,14 @@ mod tests {
         assert!(except.matches(&mine("bin this", 0, 0), me));
         let files = Filters::from(&json!({ "attachmentsOnly": true }));
         assert!(files.matches(&mine("", 0, 1), me) && !files.matches(&mine("text", 0, 0), me));
+        // Encrypted and unreadable: kept by keyword filters either way; opened, matched as text.
+        let mut locked = mine("", 0, 0);
+        locked["lc_e2e_locked"] = json!(true);
+        assert!(!only.matches(&locked, me) && !except.matches(&locked, me) && all.matches(&locked, me));
+        assert!(!except.matches(&mine("LC1:0000abcd:xyz", 0, 0), me), "raw ciphertext is never matched by words");
+        let mut opened = mine("my secret plan", 0, 0);
+        opened["lc_e2e"] = json!(true);
+        assert!(only.matches(&opened, me));
     }
 
     #[test]

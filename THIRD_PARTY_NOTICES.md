@@ -15,6 +15,16 @@ https://github.com/ViceVerse-cz/Serein, licensed under MIT OR Apache-2.0. Adapte
   `crates/model/src/permissions.rs`.
 - `src-tauri/src/captcha.rs`: showing Discord's hCaptcha in its own page (hCaptcha's native-app host
   mode, `setData` for rqdata), from `crates/platform/src/captcha.js`.
+- `src-tauri/voice/`: Serein's voice crate (`crates/discord-voice`) for calls: the voice WebSocket,
+  UDP transport, Opus audio, H.264 camera and screen video, DAVE end-to-end encryption, devices
+  and capture. Copied with its macOS and Linux modules left out; `voice/support/` holds the few
+  pieces of Serein's `client-core`, `model` and `platform` crates it uses (unchanged files:
+  `screen.rs`, `voice_settings.rs`, `audio.rs`, `picture.rs`, `live_windows.rs`). Its license
+  files are in `src-tauri/voice/`.
+- `src-tauri/src/call.rs`: the call signalling (gateway opcodes 4, 13, 18, 19, 20, ringing, stream
+  keys) follows `crates/discord-gateway/src/voice.rs` and the desktop's call wiring.
+- `src-tauri/vendor/davey` and `src-tauri/vendor/hpke-rs`: dependencies as Serein patches them
+  (see their `SEREIN-PATCH.md`).
 
 Used under the MIT license:
 
@@ -41,6 +51,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Libraries used for calls
+
+Built into LockCord as dependencies, each under its own license (the license texts ship with
+their sources):
+
+- davey 0.1.4 (Discord's DAVE protocol), MIT, https://github.com/Snazzah/davey; vendored with
+  Serein's manifest patch in `src-tauri/vendor/davey` (its LICENSE included).
+- hpke-rs 0.6.1, MPL-2.0, https://github.com/cryspen/hpke-rs; vendored with Serein's security
+  patch in `src-tauri/vendor/hpke-rs`. Its source, as modified, is in this repository, as the
+  MPL-2.0 requires.
+- OpenMLS 0.8.1, MIT.
+- opus2 0.4.0 (MIT OR Apache-2.0) with libopus, BSD-3-Clause, built from source.
+- openh264 0.9.8 with Cisco's OpenH264, BSD-2-Clause, built from source. H.264 may be covered by
+  patents in some countries.
+- cpal 0.18.2, Apache-2.0; sonora 0.2.0 (echo cancellation) and nnnoiseless 0.5.2 (noise
+  suppression), BSD-3-Clause; windows-capture 2.0.1, MIT; rtrb, MIT OR Apache-2.0.
 
 ## Concord
 

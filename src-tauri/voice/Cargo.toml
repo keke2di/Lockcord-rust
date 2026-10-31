@@ -1,0 +1,46 @@
+# Serein's discord-voice crate (MIT OR Apache-2.0, https://github.com/ViceVerse-cz/Serein),
+# adapted for LockCord: Windows only (the macOS and Linux capture modules are left out) and built
+# against small copies of the Serein crates it used (support/). Versions as Serein pins them.
+[package]
+name = "discord-voice"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+client_core = { package = "lockcord-voice-core", path = "support/client-core" }
+model = { package = "lockcord-voice-model", path = "support/model" }
+platform = { package = "lockcord-voice-platform", path = "support/platform" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+serde_json = "1.0.154"
+zeroize = "1.8"
+url = "2.5.8"
+getrandom = "0.4.3"
+tracing = { version = "0.1", default-features = false, features = ["max_level_off", "release_max_level_off"] }
+davey = { version = "=0.1.4", default-features = false }
+openmls = { version = "=0.8.1", default-features = false }
+chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc"] }
+opus2 = { version = "=0.4.0", default-features = false, features = ["backend-libopus", "static", "bundled"] }
+rtrb = "=0.4.0"
+cpal = { version = "=0.18.2", default-features = false }
+sonora = { version = "=0.2.0", default-features = false }
+nnnoiseless = { version = "=0.5.2", default-features = false }
+openh264 = "=0.9.8"
+image = { version = "=0.25.10", default-features = false }
+
+[dev-dependencies]
+sha3 = { version = "=0.10.9", default-features = false }
+openmls_rust_crypto = "=0.5.1"
+openmls_basic_credential = "=0.5.0"
+
+# Native permission and capture boundaries permit documented OS calls locally.
+[lints.rust]
+unsafe_code = "deny"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-capture = "=2.0.1"
+windows = { version = "=0.61.3", features = ["Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_Media_DirectShow", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Graphics_Gdi", "Win32_System_Ole", "Win32_Media_Audio", "Win32_System_Threading", "Win32_Security"] }
+windows-core = "=0.61.2"

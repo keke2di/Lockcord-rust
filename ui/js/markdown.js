@@ -174,7 +174,7 @@ function inline(text, depth) {
 
     if (ch === '[' && depth < MAX_DEPTH) {
       m = /^\[([^\]\n]{1,256})\]\(<?(https?:\/\/[^\s)>]+)>?\)/.exec(rest);
-      if (m) { push({ t: 'link', href: m[2], c: inline(m[1], depth + 1) }); i += m[0].length; continue; }
+      if (m) { push({ t: 'link', href: m[2], masked: true, c: inline(m[1], depth + 1) }); i += m[0].length; continue; }
     }
 
     if ((ch === 'h' || ch === 'H') && (i === 0 || /[^\w]/.test(text[i - 1]))) {
@@ -288,7 +288,8 @@ function build(n, doc, ctx) {
       const a = el(doc, 'a', 'md-link', kids(n.c, doc, ctx));
       a.href = n.href;
       a.title = n.href;
-      a.addEventListener('click', (e) => { e.preventDefault(); if (ctx.openLink) ctx.openLink(n.href); });
+      // A masked link also passes its text, so a text naming another site can be questioned.
+      a.addEventListener('click', (e) => { e.preventDefault(); if (ctx.openLink) ctx.openLink(n.href, n.masked ? a.textContent : null); });
       return a;
     }
     case 'mention': return el(doc, 'span', 'md-mention', [text(doc, '@' + ((ctx.nameOf && ctx.nameOf(n.id)) || 'unknown-user'))]);

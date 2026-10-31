@@ -10,7 +10,7 @@ import { applyMemberList, colorFor, firstChannel, renderChannels, renderMembers,
 import { removeWords, renderFriends, STATUS_TEXT } from './friends.js';
 import { createSecret } from './secret.js';
 import { applyTheme, currentTheme, preset } from './theme.js';
-import { encryptedBar, encryptedPill, secretBar, secretCard, secretLock, secretPill } from './trust.js';
+import { encryptedBar, encryptedPill, safetyGrid, secretBar, secretCard, secretLock, secretPill } from './trust.js';
 import { renderSettings } from './settings.js';
 import { LANGS, langName } from './langs.js';
 import { dropdown, toggle } from './controls.js';
@@ -18,6 +18,7 @@ import { emojiKey, isForward, renderTimeline } from './timeline.js';
 import { friendPicker, myDot, profileCard, STATUS_WORDS, statusMenu } from './profile.js';
 import { FORUM_TYPES, pinsPopup, renderForum, threadsPopup } from './threads.js';
 import { createSearchBox, parseQuery, renderResults } from './search.js';
+import { createCalls } from './call.js';
 
 const MAX_TEXT = 4000;
 const SECRET_DELETE_TEXT = 'Are you sure you want to delete this message? It goes from their screen too.';
@@ -68,6 +69,21 @@ const state = {
 
 const secret = createSecret(() => refresh());
 
+// Calls (call.js). Its helpers are this file's functions, used only once it's drawing.
+const calls = createCalls({
+  me: () => state.me,
+  dmById: (id) => dmById(id),
+  refresh: () => refresh(),
+  toast: (text) => showToast(text),
+  select: (id) => select(id),
+  confirm: (title, text, button, yes) => confirmAction(title, text, button, yes),
+  popup: (anchor, node) => popupAt(anchor, node),
+  modal: (node) => showModal(node),
+  closeLayer: () => closeLayer(),
+  voiceSettings: () => (prefs.settings && prefs.settings.voice) || {},
+  channelName: (id) => { const c = dmById(id); return c ? (c.guild_id ? '🔊 ' + (c.name || 'voice') : dmName(c)) : 'a call'; },
+});
+
 // --- Layout ----------------------------------------------------------------------------------
 
 const root = h('div', { class: 'root' });
@@ -114,7 +130,9 @@ const homeSide = h('div', { class: 'sidebar-face' }, h('div', { class: 'sidebar-
 const guildTitle = h('div', { class: 'guild-title' });
 const channelList = h('div', { class: 'channel-list', role: 'list' });
 const guildSide = h('div', { class: 'sidebar-face' }, guildTitle, channelList);
-const sidebar = h('nav', { class: 'sidebar' }, homeSide, userPanel);
+// While in a call: its bar, over the user panel.
+const callPanel = h('div', { class: 'call-panel-slot' });
+const sidebar = h('nav', { class: 'sidebar' }, homeSide, callPanel, userPanel);
 const rail = h('nav', { class: 'rail', 'aria-label': 'Servers' });
 
 const header = h('header', { class: 'chat-header' });
@@ -137,13 +155,21 @@ const presentBar = h('div', { class: 'present-bar', hidden: true }, h('span', nu
 const form = h('form', { class: 'composer-wrap', onsubmit: (e) => { e.preventDefault(); submit(); } }, presentBar, composerMark, translateHint, replyBar, uploads, composer, fileInput, typingLine);
 const memberPanel = h('aside', { class: 'member-panel', 'aria-label': 'Members' });
 const searchPanel = h('aside', { class: 'search-panel', 'aria-label': 'Search results', hidden: true });
-const chat = h('main', { class: 'chat' }, header, h('div', { class: 'chat-body' }, h('div', { class: 'chat-column' }, scroller, form), memberPanel, searchPanel));
+// A DM's call: its stage while this device is in it, or "Call in progress".
+const callSlot = h('div', { class: 'call-slot' });
+const chat = h('main', { class: 'chat' }, header, callSlot, h('div', { class: 'chat-body' }, h('div', { class: 'chat-column' }, scroller, form), memberPanel, searchPanel));
+// A server voice channel: its header and stage.
+const voiceHeader = h('header', { class: 'chat-header' });
+const voiceStage = h('div', { class: 'voice-pane-body' });
+const voicePane = h('main', { class: 'chat voice-pane' }, voiceHeader, voiceStage);
+// Calls ringing this account, over everything.
+const ringSlot = h('div', { class: 'ring-slot' });
 const forumPane = h('main', { class: 'chat forum' });
 const search = createSearchBox((text) => runSearch(text), () => closeSearch());
 const friendsPane = h('main', { class: 'chat friends' });
 const layer = h('div', { class: 'layer' });
 const sideEdge = h('div', { class: 'side-edge', 'aria-hidden': 'true' });
-const mainScreen = h('div', { class: 'app' }, rail, sidebar, friendsPane, sideEdge, layer);
+const mainScreen = h('div', { class: 'app' }, rail, sidebar, friendsPane, sideEdge, ringSlot, layer);
 
 // The side panel: tucked behind the rail so the chat has the room, sliding out while the mouse
 // is over the rail, the panel or the edge beside the rail (or the keyboard is in it), unless
@@ -297,7 +323,8 @@ function drawGuildSide(g) {
     mentions,
     muted: channelMuted,
     open: (c) => select(c.id),
-    unsupported: () => showToast('Voice comes later: LockCord is text only for now.'),
+    unsupported: (c) => showToast(c.type === 13 ? 'Stage channels aren’t supported.' : 'LockCord can’t open that kind of channel.'),
+    voiceRoom: (c) => calls.roomList(c.id),
     // The threads this account is in, and the one open now, under their channel.
     threads: (c) => {
       const list = (g.threads || []).filter((t) => t.parent_id === c.id);
@@ -315,6 +342,12 @@ function drawSidebar() {
   if (sidebar.firstChild !== face) sidebar.firstChild.replaceWith(face);
   if (g) drawGuildSide(g);
   drawUserPanel();
+  callPanel.textContent = '';
+  const bar = calls.panel();
+  if (bar) callPanel.appendChild(bar);
+  ringSlot.textContent = '';
+  const cards = calls.ringCards();
+  if (cards) ringSlot.appendChild(cards);
   if (g) return;
   const incoming = state.relationships.filter((r) => r.type === 3).length;
   friendsButton.className = 'dm friends-button' + (state.view === 'friends' ? ' selected' : '');
@@ -384,6 +417,14 @@ async function select(id) {
     api.subscribe(conv.guild_id, sub).catch((e) => console.warn('subscribe', e));
   }
   textarea.value = '';
+  // A DM's call, if it has one, is asked for (as Discord's app does when a DM opens).
+  if (conv && !conv.guild_id) calls.peek(id);
+  if (conv && conv.type === 2) {
+    state.view = 'voice';
+    showPane(voicePane);
+    refresh();
+    return;
+  }
   if (conv && FORUM_TYPES.has(conv.type)) {
     state.view = 'forum';
     showPane(forumPane);
@@ -414,6 +455,9 @@ async function select(id) {
 
 function itemsFor(id) {
   const items = (state.messages.get(id) || []).map((m) => ({ kind: 'discord', at: Date.parse(m.timestamp) || snowflakeTime(m.id), m }));
+  // Their LockCord offered encryption: a card asks before anything is answered.
+  const e = e2eOf(id);
+  if (e && e.status === 'offered') items.push({ kind: 'offer', at: e.since || Date.now() });
   const c = secret.in(id);
   const invite = !c && secret.invitation(id);
   if (invite) {
@@ -468,8 +512,27 @@ function encryptionControl(dm) {
   }
   const open = (ev) => { ev.stopPropagation(); showEncryption(dm, ev.currentTarget); };
   if (status === 'on') return h('button', { type: 'button', class: 'header-e2e', title: 'Encrypted DM', onclick: open }, encryptedPill(e.safety));
-  const label = status === 'waiting' ? 'Encryption: waiting for their LockCord' : status === 'changed' ? '⚠ Their key changed' : '⚠ Encryption keys missing';
-  return h('button', { type: 'button', class: 'header-text-button' + (status === 'waiting' ? '' : ' warn'), onclick: open }, icon(ICONS.lock, 16), label);
+  const label = status === 'waiting' ? 'Encryption: waiting for their LockCord' : status === 'offered' ? 'Encryption offered'
+    : status === 'changed' ? '⚠ Their key changed' : '⚠ Encryption keys missing';
+  return h('button', { type: 'button', class: 'header-text-button' + (status === 'waiting' || status === 'offered' ? '' : ' warn'), onclick: open }, icon(ICONS.lock, 16), label);
+}
+
+// The other side's offer to encrypt the DM, answered (Accept) or left alone (Ignore).
+function answerOffer(dm, accept) {
+  const e = e2eOf(dm.id);
+  if (!e) return;
+  const them = displayName(peerOf(dm));
+  (accept ? api.e2eAcceptOffer(e.peer) : api.e2eIgnoreOffer(e.peer))
+    .then(() => showToast(accept ? 'Your key is posted: this DM is encrypted from now on.' : 'Ignored. Nothing was posted to ' + them + '.'))
+    .catch((err) => showToast(String(err)));
+}
+
+// The whole safety code, with a way to copy it (to read it out on a call, or paste it elsewhere).
+function safetyBlock(label, code) {
+  return h('div', { class: 'safety' }, h('span', null, label), safetyGrid(code),
+    h('button', { type: 'button', class: 'button secondary small', onclick: () => {
+      navigator.clipboard.writeText(code || '').then(() => showToast('Safety code copied.'), () => showToast('Couldn’t copy it.'));
+    } }, 'Copy'));
 }
 
 function showEncryption(dm, anchor) {
@@ -480,8 +543,8 @@ function showEncryption(dm, anchor) {
   const rows = [h('div', { class: 'members-title' }, 'Encryption with ' + them)];
   if (e.status === 'on') {
     rows.push(h('div', { class: 'control-description' }, 'Everything you send here is end-to-end encrypted: Discord stores only ciphertext.'),
-      h('div', { class: 'safety' }, h('span', null, 'Safety code'), h('strong', null, e.safety || '—')),
-      h('div', { class: 'control-description' }, 'The same code on ' + them + '’s screen means nobody is in between. Compare it once, on a call or in person.'),
+      safetyBlock('Safety code', e.safety),
+      h('div', { class: 'control-description' }, 'The same 60 digits on ' + them + '’s screen mean nobody is in between. Compare them once, on a call or in person.'),
       toggle('We compared it', null, !!e.verified, (v) => done(api.e2eVerify(e.peer, v))),
       h('div', { class: 'settings-row' },
         h('button', { type: 'button', class: 'button secondary small', onclick: () => done(api.e2eEnable(dm.id), 'New keys offered.') }, 'Renew keys'),
@@ -492,11 +555,16 @@ function showEncryption(dm, anchor) {
         } }, 'Turn off')));
   } else if (e.status === 'changed') {
     rows.push(h('div', { class: 'control-description' }, them + '’s LockCord now uses a different key. That happens when they reinstall or move to a new computer, but it’s also what someone in between would do. Nothing is sent to them, and messages under the new key aren’t shown, until you accept it.'),
-      h('div', { class: 'safety' }, h('span', null, 'New safety code'), h('strong', null, e.newSafety || '—')),
+      safetyBlock('New safety code', e.newSafety),
       h('div', { class: 'control-description' }, 'Compare the new code with ' + them + ' first, on a call.'),
       h('div', { class: 'settings-row' },
         h('button', { type: 'button', class: 'button brand small', onclick: () => done(api.e2eAcceptChange(e.peer), 'New key accepted.') }, 'Accept the new key'),
         h('button', { type: 'button', class: 'button danger-outline small', onclick: () => done(api.e2eForget(e.peer), 'Encryption with ' + them + ' is off.') }, 'Turn encryption off')));
+  } else if (e.status === 'offered') {
+    rows.push(h('div', { class: 'control-description' }, them + '’s LockCord offered to encrypt this DM. Accepting posts your key; answering also tells them you use LockCord. Ignoring posts nothing.'),
+      h('div', { class: 'settings-row' },
+        h('button', { type: 'button', class: 'button brand small', onclick: () => { closeLayer(); answerOffer(dm, true); } }, 'Accept'),
+        h('button', { type: 'button', class: 'button secondary small', onclick: () => { closeLayer(); answerOffer(dm, false); } }, 'Ignore')));
   } else if (e.status === 'waiting') {
     rows.push(h('div', { class: 'control-description' }, 'Your key is posted in this DM. Encryption starts by itself when ' + them + '’s LockCord answers. If they don’t use LockCord, nothing happens and messages stay plain.'),
       h('button', { type: 'button', class: 'button danger-outline small', onclick: () => done(api.e2eForget(e.peer)) }, 'Cancel'));
@@ -636,6 +704,7 @@ function drawHeader(dm) {
       onclick: (e) => { e.stopPropagation(); showMembers(dm, e.currentTarget); },
     }, icon(ICONS.members, 22)));
   }
+  for (const b of calls.headerButtons(dm)) header.appendChild(b);
   header.appendChild(globeButton(dm));
   header.appendChild(shieldButton(dm));
   if (live) header.appendChild(secretPill(secret.canSend(dm.id), c.verification && c.verification.sas));
@@ -1080,6 +1149,7 @@ function draw(toEnd) {
   const dm = dmById(state.current);
   if (!dm) return;
   if (state.view === 'forum') { drawForum(dm); return; }
+  if (state.view === 'voice') { drawVoice(dm); return; }
   ackIfSeen(dm);
   // Away from the newest messages (after a jump) nothing pulls the view down.
   const detached = state.detached.has(dm.id);
@@ -1088,6 +1158,9 @@ function draw(toEnd) {
   const top = scroller.scrollTop;
   presentBar.hidden = !detached;
   drawHeader(dm);
+  callSlot.textContent = '';
+  const area = !dm.guild_id ? calls.dmArea(dm) : null;
+  if (area) callSlot.appendChild(area);
   const peer = peerOf(dm);
   if (!state.editing && !state.discordEditing) liveEditor = null;
   const editorFocused = !!liveEditor && document.activeElement === liveEditor.input;
@@ -1095,10 +1168,12 @@ function draw(toEnd) {
     me: state.me, peer, editing: state.editing,
     roleOf: (id) => roleOf(guildById(dm.guild_id), id),
     channelName: (id) => { const c = dmById(id); return c && c.guild_id ? c.name : null; },
-    openLink: (url) => api.openLink(url),
+    openLink,
     verify: (match) => secret.verify(match),
     joinSecret: () => { if (!secret.join()) showToast('That invite has expired.'); },
     ignoreSecret: () => secret.ignore(),
+    acceptOffer: () => answerOffer(dm, true),
+    ignoreOffer: () => answerOffer(dm, false),
     toggleReaction: (id, emoji) => secret.toggleReaction(id, emoji),
     startReply: (r) => { state.replyTo = r; refresh(); textarea.focus(); },
     startEdit: (id) => { state.editing = id; state.discordEditing = null; refresh(); },
@@ -1408,7 +1483,7 @@ function openProfile(u, anchor, guildId) {
   const ctx = () => ({
     me: state.me, guild, relationship: relationOf(u.id),
     status: self ? myDot(state.myStatus) : statusOf(u),
-    md: { nameOf, openLink: (url) => api.openLink(url), formatTime, emojiUrl, roleOf: (id) => roleOf(guild, id), channelName: () => null },
+    md: { nameOf, openLink, formatTime, emojiUrl, roleOf: (id) => roleOf(guild, id), channelName: () => null },
     guildName: (id) => { const g = guildById(id); return g && g.name; },
     message: close(() => api.openDm(u.id).then((channel) => select(channel)).catch((e) => showToast('Couldn’t open the DM: ' + e))),
     add: close(() => api.relationship(u.id, 'add').then(() => showToast('Friend request sent.')).catch((e) => showToast('Not sent: ' + e))),
@@ -1491,7 +1566,7 @@ function showAddToGroup(dm) {
 
 const mdFor = (conv) => {
   const guild = conv && conv.guild_id ? guildById(conv.guild_id) : null;
-  return { nameOf, openLink: (url) => api.openLink(url), formatTime, emojiUrl, roleOf: (id) => roleOf(guild, id), channelName: (id) => { const c = dmById(id); return c && c.guild_id ? c.name : null; } };
+  return { nameOf, openLink, formatTime, emojiUrl, roleOf: (id) => roleOf(guild, id), channelName: (id) => { const c = dmById(id); return c && c.guild_id ? c.name : null; } };
 };
 
 // Anyone may pin in a DM; in a server, where Rust says so.
@@ -1568,6 +1643,19 @@ async function loadForum(conv, offset) {
   refresh();
 }
 
+// A server voice channel: who is in it, and its call.
+function drawVoice(conv) {
+  voiceHeader.textContent = '';
+  voiceHeader.appendChild(h('div', { class: 'header-name' }, icon(ICONS.speaker, 22), h('span', null, conv.name || ''),
+    !conv.can_speak ? h('span', { class: 'header-topic' }, 'You can listen, not speak') : null));
+  voiceStage.textContent = '';
+  if (!conv.can_connect) {
+    voiceStage.appendChild(h('div', { class: 'empty-note' }, 'You can’t connect to this channel.'));
+    return;
+  }
+  voiceStage.appendChild(calls.stage(conv.id, { voice: true }));
+}
+
 function drawForum(conv) {
   renderForum(forumPane, conv, state.forum && state.forum.channel === conv.id ? state.forum : null, {
     media,
@@ -1640,9 +1728,14 @@ function drawSearch(conv) {
 
 // --- Popups ------------------------------------------------------------------------------------
 
+// Called once when the layer closes, however it closes (confirmChoice's Cancel).
+let layerClosed = null;
 function closeLayer() {
   layer.textContent = '';
   layer.className = 'layer';
+  const f = layerClosed;
+  layerClosed = null;
+  if (f) f();
 }
 document.addEventListener('click', (e) => { if (layer.firstChild && !layer.contains(e.target)) closeLayer(); });
 document.addEventListener('keydown', (e) => {
@@ -1650,6 +1743,14 @@ document.addEventListener('keydown', (e) => {
   if (layer.firstChild) closeLayer();
   else if (state.selection && !state.selection.running) stopSelecting();
 });
+
+// A dialog of its own in the layer (closed by Escape, a click outside, or its buttons).
+function showModal(node) {
+  closeLayer();
+  layer.className = 'layer modal-layer top';
+  layer.appendChild(h('div', { class: 'modal-backdrop', onclick: closeLayer }));
+  layer.appendChild(node);
+}
 
 function popupAt(anchor, node) {
   closeLayer();
@@ -1701,6 +1802,41 @@ function confirmAction(title, text, button, onConfirm) {
     h('div', { class: 'modal-buttons' },
       h('button', { type: 'button', class: 'button link', onclick: closeLayer }, 'Cancel'),
       h('button', { type: 'button', class: 'button danger', onclick: () => { closeLayer(); onConfirm(); } }, button))));
+}
+
+// The host a link's text names, if the text looks like an address ("discord.com", "https://…").
+function namedHost(label) {
+  const m = /^\s*(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?:[:/?#]\S*)?\s*$/i.exec(label || '');
+  return m ? m[1].toLowerCase().replace(/^www\./, '') : null;
+}
+
+// Opens a link in the browser. A masked link whose text names another site than it goes to
+// ([discord.com](https://elsewhere)) is shown as it is first.
+function openLink(url, label) {
+  const named = namedHost(label);
+  let target = null;
+  try { target = new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch { /* opened as is: Rust checks it */ }
+  if (!named || !target || named === target) { api.openLink(url); return; }
+  // After this click has finished bubbling (it would close the layer).
+  setTimeout(() => confirmChoice('This link goes somewhere else', 'The link says ' + named + ', but it opens ' + url + ' (' + target + ').', 'Open ' + target,
+    (yes) => { if (yes) api.openLink(url); }), 0);
+}
+
+// A yes/no question: resolve(true) on the button, resolve(false) on Cancel or a click outside.
+// Over the settings screen too; Escape or a click elsewhere counts as Cancel.
+function confirmChoice(title, text, button, resolve) {
+  closeLayer();
+  let done = false;
+  const answer = (v) => { if (done) return; done = true; layerClosed = null; closeLayer(); resolve(v); };
+  layer.className = 'layer modal-layer top';
+  layer.appendChild(h('div', { class: 'modal-backdrop', onclick: () => answer(false) }));
+  layer.appendChild(h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', onclick: (e) => e.stopPropagation() },
+    h('h2', { class: 'modal-title' }, title),
+    h('div', { class: 'modal-text' }, text),
+    h('div', { class: 'modal-buttons' },
+      h('button', { type: 'button', class: 'button link', onclick: () => answer(false) }, 'Cancel'),
+      h('button', { type: 'button', class: 'button brand', onclick: () => answer(true) }, button))));
+  layerClosed = () => answer(false);
 }
 
 function confirmDelete(text, onDelete) {
@@ -1757,7 +1893,9 @@ function takeReady(r) {
   state.presences = new Map(Object.entries(r.presences || {}));
   state.reads = new Map(Object.entries(r.reads || {}));
   state.e2e = r.e2e || { contacts: [], problem: null };
+  calls.load(r.voice);
   if (state.e2e.problem) showToast(state.e2e.problem);
+  else if (state.e2e.notice) showToast(state.e2e.notice);
   state.guilds = r.guilds || [];
   state.myStatus = r.my_status || { status: 'online' };
   const muted = r.muted || {};
@@ -1963,6 +2101,9 @@ function openSettings(start) {
     saveAppSetting: (change) => saveSettings(change),
     saveFolder: () => api.saveFolder(),
     pickSaveFolder: () => api.pickSaveFolder(),
+    voiceDevices: () => api.voiceDevices(),
+    voiceTest: (on) => api.voiceTest(on),
+    voiceTestLevel: () => api.voiceTestLevel(),
     translationDefaults: () => (prefs.settings.translate || {}).defaults || {},
     setTranslationDefaults: (change) => {
       const t = prefs.settings.translate || { defaults: {}, channels: {} };
@@ -1998,6 +2139,17 @@ function openSettings(start) {
       const saved = await api.themeImport();
       if (!saved) return null;
       prefs.themes = prefs.themes.filter((t) => t.id !== saved.id).concat([{ id: saved.id, name: saved.name, author: saved.author }]);
+      // Custom CSS can change how anything looks, even draw a fake lock: asked about first.
+      if (saved.css && saved.css.trim()) {
+        const keep = await new Promise((resolve) => confirmChoice('Keep this theme?',
+          '‘' + saved.name + '’ has custom CSS. It can’t run code or load anything, but it can change how anything looks, even draw a lock next to a message that isn’t encrypted. '
+          + 'Only keep themes from people you trust. LockCord’s own “Not encrypted” marks and safety codes can’t be changed by a theme.', 'Keep it', resolve));
+        if (!keep) {
+          await api.themeDelete(saved.id).catch(() => {});
+          prefs.themes = prefs.themes.filter((t) => t.id !== saved.id);
+          return null;
+        }
+      }
       return saved;
     },
     exportTheme: (id) => api.themeExport(id),

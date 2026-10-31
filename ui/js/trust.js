@@ -27,6 +27,10 @@ sheet.replaceSync(`
   .pill .code { font-family: ${MONO}; }
   .lock { display: flex; color: var(--trust); }
   .lock.stale { color: var(--trust-warn); }
+  .plain { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 0 6px; border: 1px solid currentColor;
+           border-radius: 8px; font-size: 11px; font-weight: 600; color: var(--trust-warn); white-space: nowrap; }
+  .grid { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 4px 14px; margin: 8px 0 4px;
+          font-family: ${MONO}; font-size: 16px; font-weight: 700; letter-spacing: 0.04em; color: var(--trust-text); }
   .bar .warn { color: var(--trust-warn); }
   .bar button { margin-left: auto; padding: 0 10px; }
   .card { margin: 16px 16px 8px; padding: 16px; border-radius: 8px; border: 1px solid var(--trust-line);
@@ -177,6 +181,29 @@ export function secretCard(spec) {
 
 // --- Encrypted DMs (e2e.rs) ----------------------------------------------------------------------
 
+// The 60-digit safety code, shortened where there's no room: its first group. The whole code is
+// in the header's popover (safetyGrid).
+export function shortCode(safety) {
+  const s = String(safety || '');
+  return s ? s.split(' ')[0] + ' …' : '—';
+}
+
+// The whole safety code, twelve groups of five in three rows, where themes can't change a digit.
+export function safetyGrid(safety) {
+  const [el, root] = host('block');
+  root.append(node('div', 'grid', String(safety || '').split(' ').filter(Boolean).map((g) => node('span', null, g))));
+  return el;
+}
+
+// Beside a message that wasn't encrypted, in an encrypted DM: a theme can't hide it, so a lock a
+// theme draws next to it can't pass for the real one.
+export function plainMark() {
+  const [el, root] = host('inline-flex');
+  el.title = 'Sent without encryption: Discord can read it.';
+  root.append(node('span', 'plain', 'Not encrypted'));
+  return el;
+}
+
 // Over the composer in an encrypted DM: to whom, the contact's safety code (the same on both
 // sides; no theme can know it), and the one way to send a message unencrypted, on purpose.
 // plainNext: the next message goes unencrypted; onToggle flips it.
@@ -192,7 +219,7 @@ export function encryptedBar(peerName, safety, plainNext, onToggle, blocked) {
       ? node('span', 'warn', node('strong', null, 'Next message unencrypted: '), 'Discord will be able to read it.')
       : blocked
         ? node('span', 'warn', node('strong', null, 'Not sending: '), blocked)
-        : node('span', null, 'Encrypted with ', node('strong', null, peerName), ' · safety code ', node('span', 'code', safety || '—'), ': Discord stores only ciphertext.'),
+        : node('span', null, 'Encrypted with ', node('strong', null, peerName), ' · safety code ', node('span', 'code', shortCode(safety)), ': Discord stores only ciphertext.'),
     button));
   return el;
 }
@@ -200,14 +227,17 @@ export function encryptedBar(peerName, safety, plainNext, onToggle, blocked) {
 // In the DM header: this DM is encrypted, with its safety code.
 export function encryptedPill(safety) {
   const [el, root] = host('inline-flex');
-  root.append(node('span', 'pill verified', icon(ICONS.lock, 12), node('span', null, 'Encrypted DM · ', node('span', 'code', safety || '—'))));
+  root.append(node('span', 'pill verified', icon(ICONS.lock, 12), node('span', null, 'Encrypted DM · ', node('span', 'code', shortCode(safety)))));
   return el;
 }
 
-// Beside an encrypted message: it was. Not drawn for messages that weren't.
-export function encryptedMark(stale) {
+// Beside an encrypted message: it was. Not drawn for messages that weren't. doubt: why it may be
+// an old one posted again ('stale': sent long before it was posted; 'copy': the same ciphertext
+// was posted before), or nothing.
+export function encryptedMark(doubt) {
   const [el, root] = host('inline-flex');
-  el.title = stale ? 'Encrypted, but sent long before it was posted: it may be an old message posted again.' : 'Encrypted: Discord only has ciphertext';
-  root.append(node('span', stale ? 'lock stale' : 'lock', icon(ICONS.lock, 12)));
+  el.title = doubt === 'copy' ? 'Encrypted, but this exact message was already posted before: this is a copy posted again.'
+    : doubt ? 'Encrypted, but sent long before it was posted: it may be an old message posted again.' : 'Encrypted: Discord only has ciphertext';
+  root.append(node('span', doubt ? 'lock stale' : 'lock', icon(ICONS.lock, 12)));
   return el;
 }
