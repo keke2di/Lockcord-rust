@@ -9,7 +9,7 @@ import { avatarWithStatus, displayName, nameOf, remember, user } from './people.
 import { applyMemberList, colorFor, firstChannel, renderChannels, renderMembers, renderRail, roleOf, TEXT_TYPES } from './servers.js';
 import { removeWords, renderFriends, STATUS_TEXT } from './friends.js';
 import { createSecret } from './secret.js';
-import { applyTheme, currentTheme, preset } from './theme.js';
+import { applyDisplay, applyTheme, currentTheme, preset } from './theme.js';
 import { encryptedBar, encryptedPill, safetyGrid, secretBar, secretCard, secretLock, secretPill } from './trust.js';
 import { renderSettings } from './settings.js';
 import { LANGS, langName } from './langs.js';
@@ -20,6 +20,7 @@ import { FORUM_TYPES, pinsPopup, renderForum, threadsPopup } from './threads.js'
 import { createSearchBox, parseQuery, renderResults } from './search.js';
 import { createCalls } from './call.js';
 import { attachAutocomplete } from './autocomplete.js';
+import { createTitlebar } from './titlebar.js';
 
 const MAX_TEXT = 4000;
 const SECRET_DELETE_TEXT = 'Are you sure you want to delete this message? It goes from their screen too.';
@@ -87,6 +88,8 @@ const calls = createCalls({
 
 // --- Layout ----------------------------------------------------------------------------------
 
+// The window's own title bar (titlebar.js), then everything else under it.
+document.body.appendChild(createTitlebar(document.title));
 const root = h('div', { class: 'root' });
 document.body.appendChild(root);
 
@@ -2106,12 +2109,12 @@ window.addEventListener('beforeunload', () => secret.shutdown());
 
 // --- Settings and the theme (theme.js; kept by Rust, settings.rs) -----------------------------------
 
-const prefs = { settings: { theme: 'builtin:dark', sidePinned: false, memberList: true }, themes: [], active: null, safeMode: false };
+const prefs = { settings: { theme: 'builtin:dark', sidePinned: false, memberList: true }, safeMode: false };
 let safeNow = false;
 
+// The colour scheme in use (and with it its theme), from the settings.
 function themeFromPrefs() {
-  const id = prefs.settings.theme;
-  return id.startsWith('builtin:') ? preset(id) : prefs.active || preset('builtin:dark');
+  return preset(prefs.settings.theme);
 }
 
 async function loadSettings() {
@@ -2122,6 +2125,7 @@ async function loadSettings() {
   }
   safeNow = prefs.safeMode;
   applyTheme(themeFromPrefs(), safeNow);
+  applyDisplay(prefs.settings.display);
   state.sidePinned = !!prefs.settings.sidePinned;
   mainScreen.classList.toggle('side-pinned', state.sidePinned);
   state.showMemberList = prefs.settings.memberList !== false;
@@ -2193,62 +2197,33 @@ function openSettings(start) {
     langOptions,
     prefs,
     me: state.me,
-    get active() { return themeFromPrefs(); },
-    choose: async (theme) => {
-      const full = theme.builtin ? preset(theme.id) : await api.themeGet(theme.id);
-      prefs.active = full.builtin ? null : full;
-      saveSettings({ theme: full.id });
-      applyTheme(full, safeNow);
-      return full;
+    scheme: () => (safeNow ? preset('builtin:dark') : themeFromPrefs()),
+    choose: (scheme) => {
+      safeNow = false;
+      saveSettings({ theme: scheme.id });
+      applyTheme(scheme, false);
     },
-    save: async (draft) => {
-      const saved = await api.themeSave(draft);
-      prefs.active = saved;
-      prefs.themes = prefs.themes.filter((t) => t.id !== saved.id).concat([{ id: saved.id, name: saved.name, author: saved.author }]);
-      saveSettings({ theme: saved.id });
-      applyTheme(saved, safeNow);
-      return saved;
+    display: () => prefs.settings.display || {},
+    setDisplay: (change) => {
+      const display = { ...(prefs.settings.display || {}), ...change };
+      saveSettings({ display });
+      applyDisplay(display);
     },
-    remove: async (id) => {
-      await api.themeDelete(id);
-      prefs.themes = prefs.themes.filter((t) => t.id !== id);
-      if (prefs.settings.theme === id) { prefs.active = null; saveSettings({ theme: 'builtin:dark' }); applyTheme(preset('builtin:dark'), safeNow); }
-    },
-    addAsset: async (id, file) => api.themeAssetAdd(id, file.name, new Uint8Array(await file.arrayBuffer())),
-    importTheme: async () => {
-      const saved = await api.themeImport();
-      if (!saved) return null;
-      prefs.themes = prefs.themes.filter((t) => t.id !== saved.id).concat([{ id: saved.id, name: saved.name, author: saved.author }]);
-      // Custom CSS can change how anything looks, even draw a fake lock: asked about first.
-      if (saved.css && saved.css.trim()) {
-        const keep = await new Promise((resolve) => confirmChoice('Keep this theme?',
-          '‘' + saved.name + '’ has custom CSS. It can’t run code or load anything, but it can change how anything looks, even draw a lock next to a message that isn’t encrypted. '
-          + 'Only keep themes from people you trust. LockCord’s own “Not encrypted” marks and safety codes can’t be changed by a theme.', 'Keep it', resolve));
-        if (!keep) {
-          await api.themeDelete(saved.id).catch(() => {});
-          prefs.themes = prefs.themes.filter((t) => t.id !== saved.id);
-          return null;
-        }
-      }
-      return saved;
-    },
-    exportTheme: (id) => api.themeExport(id),
     toast: showToast,
     close: () => closeSettings(),
   });
 }
 
-// Closing puts back the saved theme, so an unsaved draft's preview goes with it.
 function closeSettings() {
   if (settingsDispose) { settingsDispose(); settingsDispose = null; }
   settingsScreen.remove();
   settingsScreen.textContent = '';
-  applyTheme(themeFromPrefs(), safeNow);
+  refresh();
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsScreen.isConnected && !layer.firstChild) closeSettings(); });
 
-// The way out of a theme that broke the window: Ctrl+Shift+0 switches to the default theme for
-// this session, and back. (`--safe-mode` starts that way.)
+// Ctrl+Shift+0 switches to the default theme for this session, and back (`--safe-mode` starts
+// that way): a way out if a theme ever makes the window hard to use.
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.shiftKey && (e.key === '0' || e.code === 'Digit0')) {
     e.preventDefault();

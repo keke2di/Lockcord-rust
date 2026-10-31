@@ -1,0 +1,116 @@
+/* High Contrast: for reading comfort first. Pure black and white, thick white outlines on every
+   panel and control, the accent (yellow or cyan) for what's selected and what has focus, links
+   underlined, no transparency, blur, shadows or gradients, a focus ring you can always see, and
+   motion kept to a short fade. Its schemes (theme.js: Ultra Dark, Ultra Dark Cyan) set the accent. */
+
+:root {
+    --lc-font: 'Segoe UI', system-ui, sans-serif;
+    --lc-radius-s: 2px;
+    --lc-radius-m: 4px;
+    --lc-radius-l: 6px;
+    --lc-control-height: 36px;
+    --lc-control-radius: 4px;
+    --lc-input-radius: 4px;
+    --lc-item-radius: 4px;
+    --lc-composer-radius: 4px;
+    --lc-panel-gap: 6px;
+    --lc-panel-radius: 4px;
+    --lc-panel-border: 2px solid var(--lc-header);
+    --lc-panel-shadow: none;
+    --lc-hairline: var(--lc-header);
+    --lc-border-width: 2px;
+    --lc-titlebar-bg: #000;
+    --lc-titlebar-text: var(--lc-header);
+    --lc-shadow-popout: none;
+    --lc-shadow-header: none;
+    --lc-focus: 0 0 0 3px var(--lc-brand);
+    --lc-pop-from: none;
+    --lc-pop-duration: 0.08s;
+    --lc-modal-from: none;
+    --lc-toast-from: none;
+    --lc-hover-speed: 0s;
+    --lc-hover-lift: none;
+    --lc-press: none;
+}
+
+/* One black surface, white outlines, nothing see-through. */
+html, body, .app, .app > :is(.rail, .sidebar, .chat, .member-panel), .user-panel, .settings-screen, .settings-nav, .settings-main,
+.popup, .modal, .dropdown-list, .autocomplete, .emoji-picker, .profile-popout, .toast, .update-card, .ring-card, .call-slot, .voice-pane-body {
+    background: #000 !important; backdrop-filter: none !important;
+}
+.titlebar { border-bottom: 2px solid var(--lc-header); }
+.titlebar-button:hover { background: var(--lc-header); color: #000; }
+.titlebar-button.close:hover { background: #ff5c5c; color: #000; }
+.chat-header, .guild-title { border-bottom: 2px solid var(--lc-header); box-shadow: none; }
+.user-panel { border-top: 2px solid var(--lc-header); }
+.sidebar, .member-panel, .search-panel { border: 0; }
+* { text-shadow: none !important; }
+
+/* Text: white, a little heavier; nothing greyed out too far. */
+body { font-weight: 500; }
+.sidebar-title, .channel-category, .members-title, .timestamp, .gutter-time, .control-description, .dm-sub { color: var(--lc-muted); font-weight: 600; }
+.md-link, a { color: var(--lc-link) !important; text-decoration: underline !important; text-underline-offset: 2px; }
+.md-mention { background: var(--lc-brand); color: var(--lc-on-accent); border-radius: 2px; font-weight: 700; }
+.md-code, .md-pre { background: #000; border: 2px solid var(--lc-header); color: var(--lc-header); }
+
+/* Lists: the selected item in the accent, black text; hover outlined. */
+.dm, .channel, .settings-nav-item, .menu-item { color: var(--lc-header); }
+.dm.selected, .channel.selected, .settings-nav-item.selected, .friends-tab.selected { background: var(--lc-brand) !important; color: var(--lc-on-accent) !important; box-shadow: none; }
+.dm.selected *, .channel.selected *, .settings-nav-item.selected * { color: var(--lc-on-accent) !important; }
+.dm:hover:not(.selected), .channel:hover:not(.selected), .menu-item:hover, .settings-nav-item:hover:not(.selected), .emoji-cell:hover, .friend:hover {
+    background: #000; box-shadow: inset 0 0 0 2px var(--lc-header);
+}
+.rail-button { background: #000; box-shadow: inset 0 0 0 2px var(--lc-header); border-radius: 6px; color: var(--lc-header); }
+.rail-item.selected .rail-button { box-shadow: inset 0 0 0 3px var(--lc-brand); }
+.badge, .rail-badge { background: var(--lc-brand); color: var(--lc-on-accent); font-weight: 800; }
+
+/* Controls: outlined in white; the primary button in the accent. */
+.button, .button.secondary, .header-text-button, .dropdown-button, .call-button, .reaction, .friends-tab {
+    background: #000; color: var(--lc-header); border: 2px solid var(--lc-header); box-shadow: none; font-weight: 700;
+}
+.button:hover:not(:disabled), .header-text-button:hover, .call-button:hover, .reaction:hover { background: var(--lc-header); color: #000; }
+.button.brand, .button.positive { background: var(--lc-brand); color: var(--lc-on-accent); border-color: var(--lc-brand); }
+.button.danger, .call-button.danger { background: #000; color: #ff5c5c; border-color: #ff5c5c; }
+.button.danger:hover, .call-button.danger:hover { background: #ff5c5c; color: #000; }
+.call-button.accept { background: #000; color: #00ff7f; border-color: #00ff7f; }
+.button.link { border: 0; text-decoration: underline; }
+.header-button { color: var(--lc-header); border-radius: 4px; }
+.header-button:hover:not(:disabled) { background: #000; box-shadow: inset 0 0 0 2px var(--lc-header); }
+.header-text-button.warn { color: var(--lc-warning); border-color: var(--lc-warning); }
+.text-input, .input, .composer, .search-input { background: #000; color: var(--lc-header); border: 2px solid var(--lc-header); box-shadow: none; }
+.composer-input::placeholder, .search-input::placeholder { color: var(--lc-muted); }
+.switch { background: #000; box-shadow: inset 0 0 0 2px var(--lc-header); }
+.switch.on { background: var(--lc-brand); box-shadow: none; }
+.switch-knob { background: var(--lc-header); }
+.switch.on .switch-knob { background: #000; }
+.range::-webkit-slider-thumb { background: var(--lc-brand); border: 2px solid var(--lc-header); }
+.radio-card { background: #000; border: 2px solid var(--lc-header); }
+.radio-card.selected { border-color: var(--lc-brand); box-shadow: inset 0 0 0 2px var(--lc-brand); }
+
+/* Focus you can always see, text boxes included. */
+:focus-visible, .text-input:focus, .input:focus, .composer:focus-within, .search-input:focus { outline: 3px solid var(--lc-brand) !important; outline-offset: 2px; box-shadow: none !important; }
+
+/* Cards and frames. */
+.popup, .modal, .dropdown-list, .autocomplete, .emoji-picker, .profile-popout, .toast, .update-card, .ring-card,
+.embed, .reply-bar, .file-card, .thread-chip, .poll, .forum-post, .call-tile, .skin-card, .theme-tile, .signin-card {
+    border: 2px solid var(--lc-header) !important; box-shadow: none !important; border-radius: 4px;
+}
+.modal-buttons { background: #000; border-top: 2px solid var(--lc-header); }
+.call-tile { background: #000; }
+.call-tile.speaking { box-shadow: 0 0 0 4px #00ff7f !important; }
+.tile-name { background: #000; color: var(--lc-header); border: 2px solid var(--lc-header); }
+.tile-live { background: #ff5c5c; color: #000; }
+.skin-card.selected, .theme-tile.selected { border-color: var(--lc-brand) !important; box-shadow: 0 0 0 2px var(--lc-brand) !important; }
+.signin { background: #000; }
+
+/* Icons: solid white, crisp. */
+svg.lc-icon { filter: none; shape-rendering: crispEdges; }
+
+/* Scrollbars you can see. */
+::-webkit-scrollbar { width: 14px; }
+::-webkit-scrollbar-track { background: #000; box-shadow: inset 2px 0 0 var(--lc-header); }
+::-webkit-scrollbar-thumb, :hover::-webkit-scrollbar-thumb { background: var(--lc-header); border: 3px solid #000; border-radius: 4px; background-clip: padding-box; }
+* { scrollbar-color: auto; }
+
+/* One focus ring on the message box, not a second on the text inside it. */
+.composer-input:focus-visible, .composer-input:focus { outline: none !important; }

@@ -1,0 +1,188 @@
+/* Sakura Retro: pastel pixel windows (the owner's "sakura" reference). Thick dark outlines with a
+   hard offset shadow, title strips with three dots on every pane, chunky outlined buttons in a
+   monospace face, a pixel grid behind it all, striped bars. Its palettes (theme.js: Sakura, Mint,
+   Sunset) set the pastels; --lc-ink is the outline colour. */
+
+:root {
+    --lc-font: 'Segoe UI', system-ui, sans-serif;
+    --lc-font-pixel: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+    --lc-ink: #5a3a78;
+    --lc-radius-s: 6px;
+    --lc-radius-m: 8px;
+    --lc-radius-l: 10px;
+    --lc-control-height: 38px;
+    --lc-control-radius: 8px;
+    --lc-input-radius: 8px;
+    --lc-item-radius: 8px;
+    --lc-composer-radius: 10px;
+    --lc-panel-gap: 12px;
+    --lc-panel-radius: 10px;
+    --lc-panel-border: 3px solid var(--lc-ink);
+    --lc-panel-shadow: 5px 5px 0 var(--lc-ink);
+    --lc-hairline: color-mix(in srgb, var(--lc-ink) 35%, transparent);
+    --lc-titlebar-height: 38px;
+    --lc-titlebar-text: var(--lc-ink);
+    --lc-focus: 0 0 0 3px var(--lc-ink);
+}
+
+/* The pixel grid on a pastel gradient. */
+html, body {
+    background:
+        linear-gradient(color-mix(in srgb, var(--lc-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
+        linear-gradient(90deg, color-mix(in srgb, var(--lc-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
+        linear-gradient(120deg, var(--lc-gradient-a), var(--lc-gradient-b));
+}
+.app { background: transparent; padding-bottom: calc(var(--lc-panel-gap) + 5px); padding-right: calc(var(--lc-panel-gap) + 5px); }
+
+/* Every pane a little window: a gradient title strip with three dots. */
+.app > :is(.rail, .sidebar, .chat, .member-panel) { position: relative; padding-top: 18px; background: var(--lc-chat-bg); }
+.app > :is(.rail, .sidebar, .chat, .member-panel)::before {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: 16px; z-index: 2; border-bottom: 3px solid var(--lc-ink);
+    background:
+        radial-gradient(circle, #ff8fa3 3px, transparent 3.5px) 8px 50% / 12px 12px no-repeat,
+        radial-gradient(circle, #ffd36b 3px, transparent 3.5px) 20px 50% / 12px 12px no-repeat,
+        radial-gradient(circle, #7fd7a5 3px, transparent 3.5px) 32px 50% / 12px 12px no-repeat,
+        linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b));
+}
+.app > .rail::before { background: linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.app > .sidebar { background: var(--lc-sidebar); }
+.sidebar, .member-panel, .search-panel { border: 0; }
+.chat-header, .guild-title { border-bottom: 3px dashed var(--lc-hairline); box-shadow: none; }
+
+/* The title bar: a pastel strip with a chunky title. */
+.titlebar { background: linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); border-bottom: 3px solid var(--lc-ink); }
+.titlebar-title { font: 800 14px var(--lc-font-pixel); letter-spacing: 0.08em; text-transform: lowercase; color: var(--lc-ink); }
+.titlebar-title svg { color: var(--lc-ink); }
+.titlebar-buttons { gap: 6px; padding-right: 8px; align-items: center; }
+.titlebar-button { width: 26px; height: 22px; border: 2px solid var(--lc-ink); border-radius: 6px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); }
+.titlebar-button:hover { background: var(--lc-brand); color: var(--lc-on-accent); }
+.titlebar-button.close:hover { background: #ff8fa3; color: var(--lc-on-accent); }
+
+/* Type: headings, labels and buttons in the pixel face. */
+.header-name, .guild-title, .sidebar-title, .channel-category, .members-title, .section-title, .modal-title, .button, .call-phase, .ring-name, .skin-card-name {
+    font-family: var(--lc-font-pixel); letter-spacing: 0.04em;
+}
+.sidebar-title, .channel-category, .members-title { text-transform: lowercase; font-weight: 800; color: var(--lc-ink); }
+
+/* Lists: chunky rows; the selected one outlined with a hard shadow. */
+.dm, .channel { height: 40px; color: var(--lc-ink); font-weight: 600; }
+.dm.selected, .channel.selected { background: var(--lc-brand); color: var(--lc-on-accent); box-shadow: inset 0 0 0 2px var(--lc-ink), 3px 3px 0 var(--lc-ink); }
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: color-mix(in srgb, var(--lc-brand) 35%, transparent); }
+.rail-button { border-radius: 10px; border: 3px solid var(--lc-ink); background: var(--lc-sidebar); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); }
+.rail-item.selected .rail-button { background: var(--lc-brand); }
+.user-panel { margin: 8px; border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); }
+
+/* Buttons: outlined, a hard shadow that presses in. */
+.button, .button.secondary {
+    border: 3px solid var(--lc-ink); color: var(--lc-ink); font-weight: 800; text-transform: uppercase; font-size: 0.8125rem;
+    background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink);
+}
+.button.brand, .button.positive { background: var(--lc-brand); color: var(--lc-on-accent); }
+.button.secondary { background: color-mix(in srgb, #8ec5ff 60%, var(--lc-chat-bg)); }
+.button.danger, .button.danger-outline { background: #ff8fa3; color: var(--lc-on-accent); border-color: var(--lc-on-accent); }
+.button:hover:not(:disabled) { filter: brightness(1.04); }
+.button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+.button.link { border: 0; box-shadow: none; background: none; text-transform: none; text-decoration: underline; }
+.header-button { border-radius: 8px; color: var(--lc-ink); }
+.header-button:hover:not(:disabled) { background: color-mix(in srgb, var(--lc-brand) 40%, transparent); box-shadow: inset 0 0 0 2px var(--lc-ink); }
+
+/* Inputs and the composer: outlined boxes. */
+.text-input, .input, .composer { border: 3px solid var(--lc-ink); background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); color: var(--lc-ink); }
+.composer-input, .composer-input::placeholder { color: var(--lc-ink); }
+
+/* Popups, dialogs, cards. */
+.popup, .modal, .dropdown-list, .autocomplete { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); color: var(--lc-ink); }
+.modal-buttons { background: var(--lc-sidebar); border-top: 3px solid var(--lc-ink); }
+.badge { background: #ff8fa3; color: var(--lc-on-accent); border: 2px solid var(--lc-ink); }
+.lc-messages-cards .message { box-shadow: inset 0 0 0 2px var(--lc-hairline); }
+
+/* Calls. */
+.call-slot, .voice-pane-body { background: transparent; }
+.call-tile { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-sidebar); box-shadow: 4px 4px 0 var(--lc-ink); }
+.call-tile.speaking { box-shadow: 4px 4px 0 var(--lc-ink), 0 0 0 4px #7fd7a5; }
+.tile-name { background: var(--lc-chat-bg); color: var(--lc-ink); border: 2px solid var(--lc-ink); font-family: var(--lc-font-pixel); }
+.call-button { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); }
+.call-button.danger { background: #ff8fa3; color: var(--lc-on-accent); }
+.call-button.accept { background: #7fd7a5; color: var(--lc-on-accent); }
+
+/* Settings: the same windows. */
+.settings-screen { background: transparent; padding: 12px; gap: 12px; }
+.settings-nav, .settings-main { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); overflow: hidden; }
+.settings-nav { background: var(--lc-sidebar); }
+.settings-nav-item.selected { background: var(--lc-brand); color: var(--lc-on-accent); box-shadow: inset 0 0 0 2px var(--lc-ink); }
+.switch { border: 2px solid var(--lc-ink); }
+
+/* Striped scrollbars. */
+::-webkit-scrollbar { width: 14px; }
+::-webkit-scrollbar-thumb, :hover::-webkit-scrollbar-thumb {
+    border: 2px solid var(--lc-ink); border-radius: 6px; background-clip: border-box;
+    background: repeating-linear-gradient(45deg, var(--lc-brand), var(--lc-brand) 4px, color-mix(in srgb, var(--lc-brand) 55%, #fff) 4px, color-mix(in srgb, var(--lc-brand) 55%, #fff) 8px);
+}
+* { scrollbar-color: auto; }
+
+/* --- Motion, icons and the rest of the window --------------------------------------------------- */
+
+/* Pixel motion: things pop in a few frames at a time, buttons press in. */
+:root {
+    --lc-pop-from: translate(-6px, -6px);
+    --lc-pop-duration: 0.2s;
+    --lc-pop-ease: steps(4, end);
+    --lc-modal-from: translateY(-16px);
+    --lc-toast-from: translateY(16px);
+    --lc-hover-speed: 0.08s;
+    --lc-hover-lift: translate(-1px, -1px);
+    --lc-press: translate(3px, 3px);
+}
+
+/* Icons: outlined in ink, crisp. */
+svg.lc-icon:not([width="12"]):not([width="14"]) path { stroke: var(--lc-ink); stroke-width: 1.1; paint-order: stroke; stroke-linejoin: miter; }
+svg.lc-icon { shape-rendering: crispEdges; }
+.titlebar-glyph path { stroke: none; }
+.call-tile.speaking { animation: sakura-bob 0.6s steps(2, end) infinite; }
+@keyframes sakura-bob { 50% { transform: translateY(-3px); } }
+.spinner { animation-timing-function: steps(8, end); }
+
+/* Controls: chunky outlined pieces. */
+.switch { border: 3px solid var(--lc-ink); background: var(--lc-chat-bg); box-shadow: 2px 2px 0 var(--lc-ink); }
+.switch.on { background: var(--lc-brand); }
+.switch-knob { background: #fff; border: 2px solid var(--lc-ink); border-radius: 4px; box-shadow: none; }
+.range::-webkit-slider-thumb { border-radius: 3px; background: var(--lc-brand); border: 3px solid var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); }
+.radio-card { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 3px 3px 0 var(--lc-ink); }
+.radio-card.selected, .radio-card:has(input:checked) { background: color-mix(in srgb, var(--lc-brand) 45%, var(--lc-chat-bg)); }
+.radio-dot { border: 2px solid var(--lc-ink); }
+.dropdown-button { border: 3px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
+.menu-item { border-radius: 6px; color: var(--lc-ink); font-weight: 600; }
+.menu-item:hover { background: var(--lc-brand); box-shadow: inset 0 0 0 2px var(--lc-ink); }
+
+/* Messages and their parts. */
+.reaction { border: 2px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); box-shadow: 2px 2px 0 var(--lc-ink); }
+.embed { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-sidebar); box-shadow: 3px 3px 0 var(--lc-ink); }
+.md-mention { background: var(--lc-brand); color: var(--lc-on-accent); border: 2px solid var(--lc-ink); border-radius: 6px; font-weight: 700; }
+.md-code, .md-pre { font-family: var(--lc-font-pixel); background: var(--lc-sidebar); border: 2px solid var(--lc-ink); border-radius: 6px; color: var(--lc-ink); }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); }
+
+/* Toasts as little dialog windows; sign-in as a "continue?" box on the grid. */
+.toast, .update-card, .ring-card { background: var(--lc-chat-bg); color: var(--lc-ink); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
+.update-card strong, .ring-name { color: var(--lc-ink); }
+.signin { background: transparent; }
+.signin-card { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 12px; box-shadow: 6px 6px 0 var(--lc-ink); color: var(--lc-ink); position: relative; padding-top: 40px; }
+.signin-card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 22px; border-bottom: 3px solid var(--lc-ink); border-radius: 9px 9px 0 0;
+    background: radial-gradient(circle, #ff8fa3 4px, transparent 4.5px) 10px 50% / 14px 14px no-repeat, radial-gradient(circle, #ffd36b 4px, transparent 4.5px) 26px 50% / 14px 14px no-repeat,
+        radial-gradient(circle, #7fd7a5 4px, transparent 4.5px) 42px 50% / 14px 14px no-repeat, linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.signin-card h1 { font-family: var(--lc-font-pixel); letter-spacing: 0.1em; text-transform: lowercase; }
+.friends-tab { border: 2px solid var(--lc-ink); border-radius: 8px; font-family: var(--lc-font-pixel); color: var(--lc-ink); }
+.friends-tab.selected { background: var(--lc-brand); box-shadow: 2px 2px 0 var(--lc-ink); }
+.friend { border-radius: 8px; }
+.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); color: var(--lc-ink); }
+.emoji-cell:hover { background: var(--lc-brand); border-radius: 6px; box-shadow: inset 0 0 0 2px var(--lc-ink); }
+
+/* The user panel: room for the name inside the thick frame. */
+.user-panel { margin: 8px 6px; padding: 0 6px; gap: 4px; }
+.user-panel .panel-button { width: 26px; }
+
+/* The top bar: chunky outlined buttons and search. */
+.header-text-button { border: 3px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); color: var(--lc-ink); font-family: var(--lc-font-pixel); font-weight: 800; box-shadow: 2px 2px 0 var(--lc-ink); }
+.header-text-button:hover { background: var(--lc-brand); color: var(--lc-on-accent); }
+.header-text-button.warn { background: #ffd36b; color: var(--lc-on-accent); }
+.header-e2e { border-radius: 8px; }
+.search-input { border: 3px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }

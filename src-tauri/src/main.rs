@@ -2959,15 +2959,11 @@ fn store(app: &AppHandle, state: &App) -> Result<settings::Store, String> {
     Ok(settings::Store::new(&dir, &state.profile))
 }
 
-// Everything the window needs to dress itself: the settings, the user's themes, and the active
-// one in full (none in safe mode, so the default applies).
+// What the window needs to dress itself: the settings (the theme they name is built in), and
+// whether it started in safe mode (the default theme, whatever the settings say).
 #[tauri::command]
 fn settings_get(app: AppHandle, state: State<App>) -> Result<Value, String> {
-    let store = store(&app, &state)?;
-    let settings = store.settings();
-    let id = settings["theme"].as_str().unwrap_or("");
-    let active = if state.safe_mode || id.starts_with("builtin:") { Value::Null } else { store.theme(id).unwrap_or(Value::Null) };
-    Ok(json!({ "settings": settings, "themes": store.list(), "active": active, "safeMode": state.safe_mode }))
+    Ok(json!({ "settings": store(&app, &state)?.settings(), "safeMode": state.safe_mode }))
 }
 
 #[tauri::command]
@@ -3102,63 +3098,6 @@ async fn save_media(app: AppHandle, state: State<'_, App>, files: Vec<Value>) ->
     Ok(json!({ "saved": saved, "failed": failed, "folder": folder_name(&dir) }))
 }
 
-#[tauri::command]
-fn theme_get(app: AppHandle, state: State<App>, id: String) -> Result<Value, String> {
-    store(&app, &state)?.theme(&id)
-}
-
-#[tauri::command]
-fn theme_save(app: AppHandle, state: State<App>, theme: Value) -> Result<Value, String> {
-    store(&app, &state)?.save_theme(&theme)
-}
-
-#[tauri::command]
-fn theme_delete(app: AppHandle, state: State<App>, id: String) -> Result<(), String> {
-    store(&app, &state)?.delete_theme(&id)
-}
-
-// An image or font for a theme, as raw bytes from the UI (headers `lc-theme`, `lc-name`).
-#[tauri::command]
-fn theme_asset_add(app: AppHandle, state: State<'_, App>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
-    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
-    let id = header("lc-theme").ok_or("no theme")?;
-    let name = header("lc-name").and_then(|n| media::requested_url(&n)).unwrap_or_default();
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("no file".into()) };
-    store(&app, &state)?.add_asset(&id, &name, bytes)
-}
-
-#[tauri::command]
-fn theme_asset_remove(app: AppHandle, state: State<App>, id: String, name: String) -> Result<(), String> {
-    store(&app, &state)?.remove_asset(&id, &name)
-}
-
-// Importing a shared theme: the native open dialog (the window never sees the path), then the
-// file is checked as a whole and saved as a new theme. None if the dialog was cancelled.
-#[tauri::command]
-async fn theme_import(app: AppHandle, state: State<'_, App>) -> Result<Value, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let picked = app.dialog().file().set_title("Import a LockCord theme").add_filter("LockCord theme", &["lctheme", "json"]).blocking_pick_file();
-    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(Value::Null) };
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    if meta.len() > 32 * 1024 * 1024 {
-        return Err("That file is too big for a theme.".into());
-    }
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-    store(&app, &state)?.unpack(&bytes)
-}
-
-// Exporting a theme to one file, where the user picks in the native save dialog.
-#[tauri::command]
-async fn theme_export(app: AppHandle, state: State<'_, App>, id: String) -> Result<bool, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let (name, bytes) = store(&app, &state)?.pack(&id)?;
-    let picked = app.dialog().file().set_title("Export theme").set_file_name(settings::file_name(&name)).add_filter("LockCord theme", &["lctheme"]).blocking_save_file();
-    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(false) };
-    std::fs::write(path, bytes).map_err(|e| e.to_string())?;
-    Ok(true)
-}
-
-// `lctheme:` for the main window only: `<theme id>/<asset>`, read from the theme's folder.
 // `lccaptcha:` for the captcha window only: its page, with a CSP of its own (captcha.rs).
 fn serve_captcha(ctx: tauri::UriSchemeContext<'_, tauri::Wry>, _request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     let deny = |status: u16| tauri::http::Response::builder().status(status).body(Vec::new()).unwrap_or_default();
@@ -3175,20 +3114,6 @@ fn serve_captcha(ctx: tauri::UriSchemeContext<'_, tauri::Wry>, _request: tauri::
         .header("Cache-Control", "no-store")
         .body(captcha::page(&challenge, &key, &nonce).into_bytes())
         .unwrap_or_default()
-}
-
-fn serve_theme_asset(ctx: tauri::UriSchemeContext<'_, tauri::Wry>, request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    let deny = |status: u16| tauri::http::Response::builder().status(status).body(Vec::new()).unwrap_or_default();
-    if ctx.webview_label() != MAIN {
-        return deny(403);
-    }
-    let app = ctx.app_handle();
-    let state = app.state::<App>();
-    let Ok(store) = store(app, &state) else { return deny(500) };
-    match store.read_asset(request.uri().path()) {
-        Some((kind, bytes)) => tauri::http::Response::builder().status(200).header("Content-Type", kind).header("Cache-Control", "no-cache").body(bytes).unwrap_or_default(),
-        None => deny(404),
-    }
 }
 
 #[tauri::command]
@@ -3262,9 +3187,8 @@ fn main() {
             media_http: media::client(), viewing: Mutex::new(None), close_to_tray: AtomicBool::new(true), notify: Mutex::new("name".into()),
             voice: Mutex::new(call::VoiceSettings::from(&Value::Null)), frames: Arc::new(call::Frames::default()), mic_test: Mutex::new(None) })
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
-        .register_uri_scheme_protocol(settings::SCHEME, serve_theme_asset)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, theme_get, theme_save, theme_delete, theme_asset_add, theme_asset_remove, theme_import, theme_export, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);
@@ -3279,6 +3203,8 @@ fn main() {
                 .title(&title)
                 .inner_size(1240.0, 800.0)
                 .min_inner_size(900.0, 560.0)
+                // LockCord draws its own title bar (titlebar.js), so skins can dress it.
+                .decorations(false)
                 .incognito(true)
                 .data_directory(webview_dir(app.handle(), &profile))
                 .visible(!hidden)

@@ -23,6 +23,7 @@ export function icon(path, size = 20) {
   svg.setAttribute('height', size);
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'lc-icon');
   for (const d of [].concat(path)) {
     const p = document.createElementNS(SVG, 'path');
     p.setAttribute('fill', 'currentColor');

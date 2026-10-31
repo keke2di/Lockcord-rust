@@ -1,0 +1,192 @@
+/* Windows XP (Luna): the blue title bar with its red close button, a blue task pane for the side
+   panel, white content in a window frame, bevelled grey-beige buttons that glow orange on hover, a
+   green primary button, Tahoma, the blue selection. Its palettes (theme.js: Luna Blue, Olive Green,
+   Silver) set the title bar, frame and selection colours (--lc-xp-* tokens). */
+
+:root {
+    --lc-font: Tahoma, 'Segoe UI', Verdana, sans-serif;
+    --lc-font-size: 14px;
+    --lc-radius-s: 3px;
+    --lc-radius-m: 3px;
+    --lc-radius-l: 6px;
+    --lc-control-height: 26px;
+    --lc-control-radius: 3px;
+    --lc-input-radius: 0px;
+    --lc-item-radius: 0px;
+    --lc-composer-radius: 0px;
+    --lc-panel-gap: 0px;
+    --lc-panel-radius: 0px;
+    --lc-hairline: #919b9c;
+    --lc-titlebar-height: 30px;
+    --lc-titlebar-text: #fff;
+    --lc-focus: 0 0 0 1px #000 inset;
+    --lc-xp-title-a: #0058ee;
+    --lc-xp-title-b: #3a93ff;
+    --lc-xp-title-c: #0049d1;
+    --lc-xp-frame: #0831d9;
+    --lc-xp-pane-a: #7ba2e7;
+    --lc-xp-pane-b: #6375d6;
+    --lc-xp-select: #316ac5;
+    --lc-xp-start: #3c8d0d;
+    --lc-xp-face: var(--lc-xp-face);
+    --lc-xp-pane-text: var(--lc-xp-pane-text);
+}
+
+/* The window frame and its title bar. */
+html, body { background: var(--lc-xp-frame); }
+.titlebar {
+    background: linear-gradient(180deg, var(--lc-xp-title-b) 0%, var(--lc-xp-title-a) 9%, var(--lc-xp-title-a) 50%, var(--lc-xp-title-c) 90%, var(--lc-xp-title-a) 100%);
+    border-top-left-radius: 8px; border-top-right-radius: 8px;
+}
+.titlebar-title { color: #fff; font: bold 13px Trebuchet MS, Tahoma, sans-serif; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.45); }
+.titlebar-title svg { color: #fff; filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.4)); }
+.titlebar-buttons { gap: 2px; padding-right: 4px; align-items: center; }
+.titlebar-button {
+    width: 22px; height: 22px; border-radius: 3px; border: 1px solid #fff; color: #fff;
+    background: radial-gradient(circle at 30% 30%, #6fa5ff 0%, #2a63e6 60%, #1d4fc7 100%);
+    box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.3);
+}
+.titlebar-button:hover { background: radial-gradient(circle at 30% 30%, #8cbaff 0%, #3a74f0 60%, #2a5fd8 100%); color: #fff; }
+.titlebar-button.close { background: radial-gradient(circle at 30% 30%, #f0a28c 0%, #e0482e 55%, #c0301a 100%); }
+.titlebar-button.close:hover { background: radial-gradient(circle at 30% 30%, #ffb9a3 0%, #ee5a3f 55%, #d0402a 100%); }
+.titlebar-button svg { width: 9px; height: 9px; filter: drop-shadow(0 0 0.5px #fff); }
+.app { background: var(--lc-chat-bg); border-left: 3px solid var(--lc-xp-frame); border-right: 3px solid var(--lc-xp-frame); border-bottom: 3px solid var(--lc-xp-frame); }
+
+/* The rail as XP's dark-blue taskbar strip, the side panel as the blue task pane. */
+.app > .rail { background: linear-gradient(90deg, #1941a5, #245edb 40%, #3f8cf3 100%); }
+.rail-button { border-radius: 4px; background: linear-gradient(180deg, #3c81f3, #2a62d4); color: #fff; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), 1px 1px 0 rgba(0, 0, 0, 0.3); }
+.rail-item.selected .rail-button { background: linear-gradient(180deg, #1e4cb8, #163d9c); box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5); }
+.app > .sidebar { background: linear-gradient(180deg, var(--lc-xp-pane-a), var(--lc-xp-pane-b)); border-right: 1px solid var(--lc-hairline); }
+.sidebar-title, .channel-category, .guild-title {
+    margin: 10px 8px 0; padding: 4px 8px; border-radius: 6px 6px 0 0; color: #fff; font-weight: bold; font-size: 12px; text-transform: none; letter-spacing: 0;
+    background: linear-gradient(90deg, var(--lc-chat-bg) 0%, var(--lc-sidebar) 100%); color: var(--lc-xp-pane-text); box-shadow: none; border: 0;
+}
+.dm-list, .channel-list { margin: 0 8px; background: var(--lc-sidebar); border: 1px solid var(--lc-chat-bg); border-top: 0; padding: 4px; }
+.dm, .channel { color: var(--lc-xp-pane-text); font-size: 13px; height: 28px; }
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: none; color: #428eff; text-decoration: underline; }
+.dm.selected, .channel.selected { background: var(--lc-xp-select); color: #fff; box-shadow: none; }
+.dm-avatar { width: 22px; height: 22px; border-radius: 2px; }
+.user-panel { background: linear-gradient(180deg, #3168d5, #1941a5); border-top: 1px solid #0b2f8f; color: #fff; }
+.user-panel .panel-name { color: #fff; }
+.user-panel .panel-button { color: #fff; }
+
+/* Content: white, a light header bar, framed. */
+.app > .chat, .app > .member-panel { background: var(--lc-chat-bg); }
+.chat-header { background: linear-gradient(180deg, var(--lc-chat-bg), var(--lc-xp-face)); border-bottom: 1px solid var(--lc-hairline); box-shadow: none; }
+.member-panel { border-left: 1px solid var(--lc-hairline); background: var(--lc-chat-bg); }
+
+/* Buttons: bevelled grey-beige, an orange glow on hover; the primary one XP's green. */
+.button, .button.secondary {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); color: var(--lc-text);
+    border: 1px solid #003c74; border-radius: 3px; font: 12px Tahoma, sans-serif; min-width: 75px;
+    box-shadow: inset -1px -1px 0 rgba(0, 0, 0, 0.12);
+}
+.button:hover:not(:disabled), .button.secondary:hover { box-shadow: inset 0 0 0 2px #f8b636, inset -1px -1px 0 rgba(0, 0, 0, 0.12); background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); }
+.button:active:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 90%, #000), var(--lc-xp-face)); }
+.button.brand, .button.positive { background: linear-gradient(180deg, #73c45a 0%, var(--lc-xp-start) 55%, #2c6e05 100%); color: #fff; border-color: #1f5003; font-weight: bold; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35); }
+.button.danger { background: linear-gradient(180deg, #f08c75, #d6492c); color: #fff; border-color: #8c1f0a; }
+.button.danger-outline { border-color: #8c1f0a; color: #8c1f0a; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); }
+.button.link { border: 0; background: none; color: var(--lc-link); text-decoration: underline; box-shadow: none; min-width: 0; }
+.header-button { border-radius: 3px; color: #333; }
+.header-button:hover:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); box-shadow: inset 0 0 0 1px #c3c3b6; color: var(--lc-text); }
+
+/* Inputs: white, a thin blue-grey border, square. */
+.text-input, .input, .composer { background: var(--lc-chat-bg); border: 1px solid #7f9db9; border-radius: 0; box-shadow: none; color: var(--lc-text); }
+.composer-input { color: var(--lc-text); }
+
+/* Windows: popups and dialogs get a small blue title strip. */
+.popup, .dropdown-list, .autocomplete { background: var(--lc-chat-bg); border: 1px solid var(--lc-xp-frame); border-radius: 0; box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.4); color: var(--lc-text); }
+.modal { border: 3px solid var(--lc-xp-frame); border-radius: 8px 8px 0 0; padding-top: 0; background: var(--lc-xp-face); color: var(--lc-text); }
+.modal-title { margin: 0 -16px 12px; padding: 6px 12px; color: #fff; font: bold 13px Trebuchet MS, Tahoma, sans-serif; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    background: linear-gradient(180deg, var(--lc-xp-title-b), var(--lc-xp-title-a) 15%, var(--lc-xp-title-c)); }
+.modal-buttons { background: var(--lc-xp-face); }
+.badge { background: #e0482e; border-radius: 3px; }
+
+/* Calls. */
+.call-slot, .voice-pane-body { background: linear-gradient(180deg, var(--lc-xp-pane-a), var(--lc-xp-pane-b)); }
+.call-tile { border-radius: 0; border: 2px solid var(--lc-xp-frame); background: #000; }
+.tile-name { background: var(--lc-xp-select); color: #fff; border-radius: 0; }
+.call-button { border-radius: 3px; border: 1px solid #003c74; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); color: var(--lc-text); }
+.call-button.danger { background: linear-gradient(180deg, #f08c75, #d6492c); color: #fff; }
+.call-button.accept { background: linear-gradient(180deg, #73c45a, #2c6e05); color: #fff; }
+
+/* Settings as an XP control panel: the task pane on the left. */
+.settings-screen { background: var(--lc-xp-face); inset: var(--lc-titlebar-height) 3px 3px 3px; }
+.settings-nav { background: linear-gradient(180deg, var(--lc-xp-pane-a), var(--lc-xp-pane-b)); }
+.settings-nav-item { color: #fff; }
+.settings-nav-item.selected { background: var(--lc-xp-select); color: #fff; }
+.settings-main { background: var(--lc-chat-bg); }
+.section-title { color: var(--lc-xp-pane-text); font: bold 15px Tahoma, sans-serif; }
+.switch.on { background: var(--lc-xp-start); }
+
+/* Scrollbars: XP's light blue. */
+::-webkit-scrollbar { width: 16px; }
+::-webkit-scrollbar-track { background: var(--lc-xp-face); }
+::-webkit-scrollbar-thumb, :hover::-webkit-scrollbar-thumb { background: linear-gradient(90deg, #c8d6fb, #b7caf5); border: 1px solid #fff; border-radius: 2px; box-shadow: inset 0 0 0 1px #9eb6e8; }
+* { scrollbar-color: auto; }
+
+/* --- Motion, icons and the rest of the window --------------------------------------------------- */
+
+/* XP doesn't glide: menus fade in quickly, windows simply appear, buttons press in. */
+:root {
+    --lc-pop-from: none;
+    --lc-pop-duration: 0.1s;
+    --lc-pop-ease: linear;
+    --lc-modal-from: none;
+    --lc-toast-from: translateY(6px);
+    --lc-hover-speed: 0s;
+    --lc-hover-lift: none;
+    --lc-press: translate(1px, 1px);
+}
+
+/* Icons: XP's crisp coloured glyphs with a small shadow. */
+svg.lc-icon { filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.28)); }
+.header-button svg.lc-icon { color: var(--lc-xp-pane-text); }
+.header-button.on svg.lc-icon { color: var(--lc-xp-start); }
+.titlebar svg.lc-icon, .rail svg.lc-icon, .user-panel svg.lc-icon, .button.brand svg.lc-icon { color: #fff; }
+.call-button svg.lc-icon { filter: none; }
+
+/* Controls: checkbox-like switches, XP sliders, group boxes, combo boxes. */
+.switch { width: 40px; border-radius: 2px; background: var(--lc-chat-bg); border: 1px solid #1c5180; box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.2); }
+.switch.on { background: linear-gradient(180deg, #8fd16f, var(--lc-xp-start)); }
+.switch-knob { border-radius: 2px; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); border: 1px solid #003c74; box-shadow: none; }
+.range { accent-color: var(--lc-xp-select); }
+.range::-webkit-slider-thumb { width: 11px; height: 21px; border-radius: 2px; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); border: 1px solid #003c74; box-shadow: none; }
+.radio-card { background: var(--lc-chat-bg); border: 1px solid var(--lc-hairline); border-radius: 3px; }
+.radio-card.selected, .radio-card:has(input:checked) { border-color: var(--lc-xp-select); background: color-mix(in srgb, var(--lc-xp-select) 10%, var(--lc-chat-bg)); }
+.radio-dot { border: 1px solid #1c5180; background: radial-gradient(circle, #fff 40%, #e6e6e0); }
+.dropdown-button { border-radius: 0; background: var(--lc-chat-bg); border: 1px solid #7f9db9; color: var(--lc-text); }
+.dropdown-button svg { background: linear-gradient(180deg, #c6d8fc, #9ab8f4); border: 1px solid #fff; border-radius: 2px; color: #4d6185; }
+.dropdown-list, .context-menu { border-radius: 0; }
+.menu-item { border-radius: 0; color: var(--lc-text); }
+.menu-item:hover { background: var(--lc-xp-select); color: #fff; }
+
+/* Messages and their parts. */
+.reaction { border-radius: 3px; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); border: 1px solid #b5b5a8; }
+.embed { background: var(--lc-chat-bg); border: 1px solid #919b9c; border-left: 4px solid var(--lc-xp-select); border-radius: 0; color: var(--lc-text); }
+.md-mention { background: #ffffe1; color: #0033cc; border: 1px dotted #0033cc; border-radius: 0; }
+.md-link { color: var(--lc-link); text-decoration: underline; }
+.md-code, .md-pre { font-family: 'Lucida Console', Consolas, monospace; background: var(--lc-code-bg); border: 1px solid #919b9c; border-radius: 0; }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: var(--lc-chat-bg); border: 1px solid #919b9c; border-radius: 0; color: var(--lc-text); }
+
+/* Toasts as XP's yellow balloons; sign-in as the Welcome screen; tabs as XP tabs. */
+.toast, .update-card, .ring-card { background: #ffffe1; color: #000; border: 1px solid #000; border-radius: 8px; box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.4); }
+.update-card strong, .update-card span, .ring-name, .ring-sub { color: #000; }
+.signin { background: linear-gradient(180deg, #00309c 0%, #00309c 12%, #5a7edc 12.5%, #5a7edc 87.5%, #00309c 88%); }
+.signin-card { background: transparent; color: #fff; box-shadow: none; border: 0; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5); }
+.signin-card h1 { font: bold italic 2.25rem Franklin Gothic Medium, Arial, sans-serif; }
+.friends-tab { border: 1px solid #919b9c; border-bottom: 0; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); color: var(--lc-text); }
+.friends-tab.selected { background: var(--lc-chat-bg); border-top: 2px solid #f8b636; }
+.friend { border-radius: 0; }
+.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 1px solid var(--lc-xp-frame); border-radius: 0; color: var(--lc-text); }
+.profile-banner { background: linear-gradient(180deg, var(--lc-xp-title-b), var(--lc-xp-title-a) 15%, var(--lc-xp-title-c)) !important; }
+.emoji-cell:hover { background: var(--lc-xp-select); border-radius: 0; }
+
+/* The top bar as an XP toolbar: flat buttons that bevel on hover, text buttons on the button face,
+   the search a white box. */
+.header-text-button { border-radius: 3px; border: 1px solid #003c74; color: var(--lc-text); font: 12px Tahoma, sans-serif;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); }
+.header-text-button:hover { box-shadow: inset 0 0 0 2px #f8b636; }
+.header-text-button.warn { border-color: #8c1f0a; color: #8c1f0a; }
+.header-e2e { border-radius: 3px; }
+.search-input { border-radius: 0; background: var(--lc-chat-bg); border: 1px solid #7f9db9; color: var(--lc-text); }

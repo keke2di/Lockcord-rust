@@ -1,0 +1,133 @@
+/* Blossom: a soft peach-to-pink backdrop with white cards floating on it, big round corners, soft
+   shadows, a filled pill for the selected item and bold headings (the owner's "pink" reference).
+   Its palettes (theme.js: Blossom, Peach, Lilac) are light. */
+
+:root {
+    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --lc-radius-s: 10px;
+    --lc-radius-m: 16px;
+    --lc-radius-l: 24px;
+    --lc-control-height: 38px;
+    --lc-control-radius: 999px;
+    --lc-input-radius: 999px;
+    --lc-item-radius: 14px;
+    --lc-composer-radius: 999px;
+    --lc-panel-gap: 14px;
+    --lc-panel-radius: 24px;
+    --lc-panel-border: none;
+    --lc-panel-shadow: 0 18px 40px -18px color-mix(in srgb, var(--lc-brand) 35%, rgba(0, 0, 0, 0.25)), 0 2px 6px rgba(0, 0, 0, 0.04);
+    --lc-hairline: color-mix(in srgb, var(--lc-brand) 10%, rgba(0, 0, 0, 0.06));
+    --lc-titlebar-bg: transparent;
+    --lc-titlebar-text: color-mix(in srgb, var(--lc-header) 70%, transparent);
+    --lc-titlebar-height: 36px;
+    --lc-focus: 0 0 0 3px color-mix(in srgb, var(--lc-brand) 35%, transparent);
+}
+
+/* The backdrop: a warm gradient the cards float on. */
+html, body { background: linear-gradient(135deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.app { background: transparent; }
+.app > :is(.rail, .sidebar, .chat, .member-panel) { background: var(--lc-chat-bg); }
+.app > .sidebar { background: var(--lc-sidebar); }
+.app > .rail { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); backdrop-filter: blur(12px); }
+.sidebar, .member-panel, .search-panel, .chat-header, .guild-title, .user-panel { border: 0; }
+.chat-header { padding-top: 6px; }
+.header-name { font-size: 1.125rem; font-weight: 800; letter-spacing: -0.01em; }
+.titlebar-title { font-weight: 700; }
+
+/* Lists: the selected item a filled accent pill; headings bold. */
+.dm, .channel { color: var(--lc-text); font-weight: 500; }
+.dm.selected, .channel.selected {
+    background: linear-gradient(135deg, var(--lc-brand), color-mix(in srgb, var(--lc-brand) 75%, #ff8a65));
+    color: var(--lc-on-accent);
+    box-shadow: 0 10px 20px -10px var(--lc-brand);
+}
+.dm.selected .dm-sub, .dm.selected .channel-glyph { color: inherit; opacity: 0.85; }
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: color-mix(in srgb, var(--lc-brand) 8%, transparent); }
+.sidebar-title, .channel-category, .members-title { font-weight: 700; letter-spacing: 0.02em; text-transform: none; font-size: 0.8125rem; color: var(--lc-muted); }
+.user-panel { margin: 10px; border-radius: 18px; background: color-mix(in srgb, var(--lc-brand) 6%, var(--lc-chat-bg)); }
+
+/* Rail: soft round icons. */
+.rail-button { background: var(--lc-chat-bg); box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.25); }
+.rail-item.selected .rail-button { box-shadow: 0 0 0 3px var(--lc-brand), 0 8px 18px -8px var(--lc-brand); }
+
+/* Controls: round icon buttons in the header, pill buttons, a white pill composer. */
+.header-button { width: 36px; height: 36px; border-radius: 50%; background: var(--lc-chat-bg); box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--lc-hairline); }
+.header-button:hover:not(:disabled) { color: var(--lc-brand); }
+.button { font-weight: 700; }
+.button.brand { background: linear-gradient(135deg, var(--lc-brand), color-mix(in srgb, var(--lc-brand) 75%, #ff8a65)); box-shadow: 0 10px 20px -10px var(--lc-brand); }
+.button.secondary { background: var(--lc-chat-bg); color: var(--lc-header); box-shadow: inset 0 0 0 1px var(--lc-hairline), 0 4px 10px -6px rgba(0, 0, 0, 0.2); }
+.composer { background: var(--lc-chat-bg); box-shadow: 0 10px 30px -14px color-mix(in srgb, var(--lc-brand) 45%, rgba(0, 0, 0, 0.3)), inset 0 0 0 1px var(--lc-hairline); }
+.text-input, .input { background: color-mix(in srgb, var(--lc-brand) 4%, var(--lc-chat-bg)); }
+
+/* Cards, popups, the timeline's cards. */
+.popup, .modal, .dropdown-list, .autocomplete { background: var(--lc-chat-bg); border: 0; box-shadow: 0 24px 60px -20px color-mix(in srgb, var(--lc-brand) 45%, rgba(0, 0, 0, 0.35)); }
+.lc-messages-cards .message { background: color-mix(in srgb, var(--lc-brand) 4%, var(--lc-chat-bg)); }
+.badge { background: var(--lc-brand); }
+
+/* Calls. */
+.call-slot, .voice-pane-body { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-brand) 8%, var(--lc-chat-bg)), var(--lc-chat-bg)); }
+.call-tile { border-radius: 22px; border: 0; background: linear-gradient(160deg, color-mix(in srgb, var(--lc-brand) 14%, var(--lc-chat-bg)), color-mix(in srgb, var(--lc-brand) 30%, var(--lc-chat-bg))); box-shadow: 0 14px 30px -16px var(--lc-brand); }
+.tile-name { background: color-mix(in srgb, var(--lc-chat-bg) 85%, transparent); color: var(--lc-text); }
+.call-button { background: var(--lc-chat-bg); color: var(--lc-header); box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.35), inset 0 0 0 1px var(--lc-hairline); }
+.call-button.danger { background: var(--lc-danger); color: #fff; }
+.call-button.accept { background: var(--lc-positive); color: #fff; }
+
+/* Settings. */
+.settings-screen { background: linear-gradient(135deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.settings-nav { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); border: 0; }
+.settings-main { background: var(--lc-chat-bg); margin: 14px 14px 14px 0; border-radius: 24px; box-shadow: var(--lc-panel-shadow); overflow: hidden; }
+.settings-nav-item.selected { background: linear-gradient(135deg, var(--lc-brand), color-mix(in srgb, var(--lc-brand) 75%, #ff8a65)); color: var(--lc-on-accent); }
+.section-title { font-weight: 800; letter-spacing: -0.01em; }
+
+/* --- Motion, icons and the rest of the window --------------------------------------------------- */
+
+:root {
+    --lc-pop-from: translateY(10px) scale(0.9);
+    --lc-pop-duration: 0.32s;
+    --lc-pop-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --lc-modal-from: scale(0.88);
+    --lc-toast-from: translateY(20px) scale(0.9);
+    --lc-hover-speed: 0.25s;
+    --lc-hover-lift: translateY(-2px) scale(1.02);
+    --lc-press: scale(0.95);
+}
+
+/* Icons: rounded and soft, tinted with the accent in the header and the calls. */
+svg.lc-icon path { stroke: currentColor; stroke-width: 0.6; stroke-linejoin: round; }
+.header-button svg.lc-icon, .call-button:not(.danger):not(.accept) svg.lc-icon { color: var(--lc-brand); filter: drop-shadow(0 2px 3px color-mix(in srgb, var(--lc-brand) 30%, transparent)); }
+.dm.selected svg.lc-icon, .button.brand svg.lc-icon { color: var(--lc-on-accent); filter: none; }
+.call-tile.speaking { animation: blossom-beat 1.2s ease-in-out infinite; }
+@keyframes blossom-beat { 50% { transform: scale(1.015); } }
+
+/* Controls. */
+.switch { background: color-mix(in srgb, var(--lc-brand) 15%, color-mix(in srgb, var(--lc-text) 15%, var(--lc-chat-bg))); }
+.switch.on { background: linear-gradient(135deg, var(--lc-brand), color-mix(in srgb, var(--lc-brand) 75%, #ff8a65)); }
+.switch-knob { background: var(--lc-chat-bg); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
+.range::-webkit-slider-thumb { background: var(--lc-chat-bg); border: 3px solid var(--lc-brand); box-shadow: 0 4px 10px -2px var(--lc-brand); }
+.radio-card { background: var(--lc-chat-bg); border-radius: 18px; border: 0; box-shadow: 0 8px 20px -14px rgba(0, 0, 0, 0.35), inset 0 0 0 1px var(--lc-hairline); }
+.radio-card.selected, .radio-card:has(input:checked) { box-shadow: 0 10px 24px -14px var(--lc-brand), inset 0 0 0 2px var(--lc-brand); }
+.dropdown-button { border-radius: 999px; background: var(--lc-chat-bg); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.menu-item { border-radius: 12px; }
+
+/* Messages and their parts. */
+.reaction { border-radius: 999px; background: var(--lc-chat-bg); box-shadow: 0 4px 10px -6px rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--lc-hairline); }
+.embed { background: var(--lc-chat-bg); border-radius: 18px; box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.3); border: 0; }
+.md-mention { background: color-mix(in srgb, var(--lc-brand) 14%, var(--lc-chat-bg)); color: var(--lc-brand); border-radius: 999px; padding: 0 6px; }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: var(--lc-chat-bg); border-radius: 18px; box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.3); }
+
+/* Toasts, cards, sign-in, friends, pickers, profiles. */
+.toast, .update-card, .ring-card { background: var(--lc-chat-bg); color: var(--lc-text); border: 0; border-radius: 22px; box-shadow: 0 20px 40px -16px color-mix(in srgb, var(--lc-brand) 50%, rgba(0, 0, 0, 0.3)); }
+.signin { background: linear-gradient(135deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.signin-card { background: var(--lc-chat-bg); border-radius: 28px; box-shadow: 0 30px 60px -20px color-mix(in srgb, var(--lc-brand) 50%, rgba(0, 0, 0, 0.3)); }
+.friends-tab { border-radius: 999px; }
+.friends-tab.selected { background: linear-gradient(135deg, var(--lc-brand), color-mix(in srgb, var(--lc-brand) 75%, #ff8a65)); color: var(--lc-on-accent); }
+.friend { border-radius: 16px; }
+.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 0; border-radius: 24px; box-shadow: 0 24px 50px -20px color-mix(in srgb, var(--lc-brand) 45%, rgba(0, 0, 0, 0.35)); }
+.emoji-cell:hover { background: color-mix(in srgb, var(--lc-brand) 12%, var(--lc-chat-bg)); border-radius: 12px; transform: scale(1.15); }
+
+/* The top bar: round white icon buttons, pill text buttons and search, all floating. */
+.header-text-button { border-radius: 999px; border: 0; background: var(--lc-chat-bg); box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--lc-hairline); color: var(--lc-header); }
+.header-text-button:hover { color: var(--lc-brand); }
+.header-text-button.warn { box-shadow: inset 0 0 0 2px var(--lc-warning); }
+.header-e2e { border-radius: 999px; }
+.search-input { border-radius: 999px; border: 0; background: var(--lc-chat-bg); box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--lc-hairline); }

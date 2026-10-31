@@ -30,8 +30,10 @@ talks to Discord's API and gateway itself.
 - **Purge and Guard**: delete your own messages by channel and filter, or guard a channel with
   a trigger word or a time limit. Paced, so Discord sees no burst.
 - **Translation** per chat, both ways (through Google; never for secret chats or encrypted DMs).
-- **Themes**: presets, every colour, fonts, layout, glass and animated backgrounds, custom CSS,
-  shareable theme files. Ctrl+Shift+0 switches to the default theme if one breaks the window.
+- **Themes**: seven complete looks (LockCord, Midnight Pro, Blossom, Windows XP, Aero Glass,
+  Sakura Retro, Minimal), each changing shapes, frames, buttons, icons and animations, with its own
+  light and dark colour schemes. Text size, compact messages and animations can be set on top.
+  Ctrl+Shift+0 switches to the default theme for a moment.
 - **On the desktop**: notifications (by default who it's from, not what they said), a tray icon,
   closing to the tray, starting with Windows, and "Save media" for a message's files (programs
   get ".download" added, and every file is marked as from the internet).

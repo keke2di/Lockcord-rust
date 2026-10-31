@@ -1,0 +1,114 @@
+/* Minimal: no chrome. One background everywhere, no panel colours, no shadows, separators only;
+   the selected item is bold with a thin accent bar; buttons are plain; one accent. Its palettes
+   (theme.js: Paper, Ink) are light and dark. */
+
+:root {
+    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --lc-radius-s: 2px;
+    --lc-radius-m: 4px;
+    --lc-radius-l: 6px;
+    --lc-control-height: 32px;
+    --lc-control-radius: 4px;
+    --lc-input-radius: 0px;
+    --lc-item-radius: 0px;
+    --lc-composer-radius: 0px;
+    --lc-panel-gap: 0px;
+    --lc-panel-radius: 0px;
+    --lc-hairline: color-mix(in srgb, var(--lc-text) 12%, transparent);
+    --lc-titlebar-bg: var(--lc-chat-bg);
+    --lc-shadow-popout: 0 1px 0 var(--lc-hairline);
+    --lc-focus: 0 0 0 1px var(--lc-header);
+}
+
+/* One surface. */
+html, body, .app, .app > :is(.rail, .sidebar, .chat, .member-panel), .user-panel, .settings-screen, .settings-nav, .settings-main { background: var(--lc-chat-bg); }
+.rail { border-right: 1px solid var(--lc-hairline); }
+.titlebar { border-bottom: 1px solid var(--lc-hairline); }
+.titlebar-title svg { color: var(--lc-header); }
+
+/* Lists: plain text; the selected one bold with a thin bar. */
+.dm, .channel { color: var(--lc-muted); }
+.dm.selected, .channel.selected { background: none; color: var(--lc-header); font-weight: 700; box-shadow: inset 2px 0 0 var(--lc-brand); }
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: none; color: var(--lc-header); }
+.sidebar-title, .channel-category, .members-title { font-weight: 500; letter-spacing: 0.06em; }
+.rail-button { background: none; box-shadow: inset 0 0 0 1px var(--lc-hairline); border-radius: 50%; }
+.rail-item.selected .rail-button { box-shadow: inset 0 0 0 2px var(--lc-header); }
+.badge { background: var(--lc-header); color: var(--lc-chat-bg); }
+
+/* Buttons: the primary one solid, the rest outlined or text. */
+.button.brand, .button.positive { background: var(--lc-brand); color: var(--lc-on-accent); box-shadow: none; }
+.button.secondary { background: none; box-shadow: inset 0 0 0 1px var(--lc-hairline); color: var(--lc-header); }
+.button.secondary:hover { box-shadow: inset 0 0 0 1px var(--lc-header); }
+.button.danger { background: none; color: var(--lc-danger); box-shadow: inset 0 0 0 1px var(--lc-danger); }
+.header-button:hover:not(:disabled) { background: none; color: var(--lc-header); }
+
+/* Inputs: an underline. */
+.text-input, .input { border: 0; border-bottom: 1px solid var(--lc-hairline); background: none; }
+.composer { background: none; box-shadow: none; border-top: 1px solid var(--lc-hairline); }
+
+/* Popups: a frame, nothing else. */
+.popup, .modal, .dropdown-list, .autocomplete { background: var(--lc-chat-bg); border: 1px solid var(--lc-header); box-shadow: none; }
+.modal-buttons { background: var(--lc-chat-bg); border-top: 1px solid var(--lc-hairline); }
+.lc-messages-cards .message, .lc-messages-bubbles .message .content { background: none; box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+
+/* Calls: outlines. */
+.call-slot, .voice-pane-body { background: var(--lc-chat-bg); }
+.call-tile { background: none; border: 1px solid var(--lc-hairline); border-radius: 4px; }
+.call-tile.speaking { box-shadow: 0 0 0 1px var(--lc-header); }
+.call-button { background: none; color: var(--lc-header); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.call-button.danger { background: var(--lc-danger); color: #fff; box-shadow: none; }
+.settings-nav-item.selected { background: none; font-weight: 700; box-shadow: inset 2px 0 0 var(--lc-brand); }
+
+/* Scrollbars: thin lines. */
+::-webkit-scrollbar { width: 6px; }
+:hover::-webkit-scrollbar-thumb { background-color: var(--lc-hairline); border: 0; }
+
+/* --- Motion, icons and the rest of the window --------------------------------------------------- */
+
+/* Calm: a short fade, nothing moves. */
+:root {
+    --lc-pop-from: none;
+    --lc-pop-duration: 0.1s;
+    --lc-pop-ease: ease-out;
+    --lc-modal-from: none;
+    --lc-toast-from: none;
+    --lc-hover-speed: 0.1s;
+    --lc-hover-lift: none;
+    --lc-press: none;
+}
+
+/* Icons: thin lines. */
+svg.lc-icon:not([width="12"]):not([width="14"]) path { fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linejoin: round; }
+.button.brand svg.lc-icon path, .call-button.danger svg.lc-icon path { fill: currentColor; stroke: none; }
+
+/* Controls: outlines and underlines. */
+.switch { background: none; box-shadow: inset 0 0 0 1px var(--lc-muted); }
+.switch.on { background: var(--lc-header); box-shadow: none; }
+.switch-knob { background: var(--lc-chat-bg); box-shadow: inset 0 0 0 1px var(--lc-muted); }
+.range::-webkit-slider-thumb { background: var(--lc-header); box-shadow: none; }
+.radio-card { background: none; border: 0; border-bottom: 1px solid var(--lc-hairline); border-radius: 0; }
+.radio-card.selected, .radio-card:has(input:checked) { background: none; box-shadow: inset 2px 0 0 var(--lc-brand); }
+.dropdown-button { background: none; border: 0; border-bottom: 1px solid var(--lc-hairline); border-radius: 0; }
+.menu-item { border-radius: 0; }
+.menu-item:hover { background: none; text-decoration: underline; }
+
+/* Messages and their parts. */
+.reaction { background: none; border: 1px solid var(--lc-hairline); border-radius: 2px; }
+.embed { background: none; border: 0; border-left: 1px solid var(--lc-header); border-radius: 0; }
+.md-mention { background: none; color: var(--lc-header); font-weight: 700; text-decoration: underline; }
+.md-code, .md-pre { background: none; border: 1px solid var(--lc-hairline); border-radius: 0; }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: none; border: 1px solid var(--lc-hairline); border-radius: 0; }
+
+/* Toasts, sign-in, friends, pickers, profiles. */
+.toast, .update-card, .ring-card { background: var(--lc-chat-bg); color: var(--lc-text); border: 1px solid var(--lc-header); border-radius: 0; box-shadow: none; }
+.signin, .signin-card { background: var(--lc-chat-bg); box-shadow: none; border: 0; }
+.friends-tab { border-radius: 0; background: none; }
+.friends-tab.selected { background: none; box-shadow: inset 0 -1px 0 var(--lc-header); color: var(--lc-header); }
+.friend { border-radius: 0; }
+.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 1px solid var(--lc-header); border-radius: 0; box-shadow: none; }
+.emoji-cell:hover { background: none; outline: 1px solid var(--lc-hairline); border-radius: 0; }
+
+/* The top bar: plain icons, text buttons as underlined words, an underlined search. */
+.header-text-button { border: 0; border-radius: 0; background: none; text-decoration: underline; text-underline-offset: 3px; }
+.header-text-button.warn { color: var(--lc-warning); }
+.search-input { border: 0; border-bottom: 1px solid var(--lc-hairline); border-radius: 0; background: none; }

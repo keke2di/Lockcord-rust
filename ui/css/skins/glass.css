@@ -1,0 +1,165 @@
+/* Aero Glass (Vista): translucent, blurred glass frames over an aurora wallpaper, a glossy highlight
+   across the top of each pane, a black glass title bar, glossy rounded buttons that glow blue on
+   hover, Segoe UI, the soft blue selection. Its palettes (theme.js: Aero Clear, Aero Dark, Aqua)
+   tint the glass through the usual panel colours. */
+
+:root {
+    --lc-font: 'Segoe UI', Tahoma, sans-serif;
+    --lc-radius-s: 4px;
+    --lc-radius-m: 6px;
+    --lc-radius-l: 10px;
+    --lc-control-height: 30px;
+    --lc-control-radius: 4px;
+    --lc-input-radius: 3px;
+    --lc-item-radius: 4px;
+    --lc-composer-radius: 6px;
+    --lc-panel-gap: 8px;
+    --lc-panel-radius: 8px;
+    --lc-panel-border: 1px solid rgba(255, 255, 255, 0.55);
+    --lc-panel-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --lc-hairline: rgba(255, 255, 255, 0.35);
+    --lc-titlebar-height: 32px;
+    --lc-titlebar-text: #fff;
+    --lc-glass: 0.55;
+}
+
+/* The wallpaper: Vista's aurora. */
+html, body {
+    background:
+        radial-gradient(70% 60% at 20% 20%, rgba(120, 220, 160, 0.55), transparent 60%),
+        radial-gradient(60% 60% at 80% 30%, rgba(60, 140, 230, 0.6), transparent 60%),
+        radial-gradient(80% 70% at 50% 100%, rgba(20, 60, 140, 0.9), transparent 70%),
+        linear-gradient(160deg, #0b3d6e, #062a4f);
+}
+.app { background: transparent; }
+
+/* Glass panes: tinted by the palette, blurred, with a glossy top. */
+.app > :is(.rail, .sidebar, .chat, .member-panel) {
+    position: relative;
+    background: color-mix(in srgb, var(--lc-sidebar) calc(var(--lc-glass) * 100%), transparent);
+    backdrop-filter: blur(16px) saturate(140%);
+}
+.app > .chat { background: color-mix(in srgb, var(--lc-chat-bg) 88%, transparent); }
+.app > :is(.rail, .sidebar, .member-panel)::before {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: 46px; pointer-events: none; border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.08) 50%, transparent 51%);
+}
+.sidebar, .member-panel, .search-panel { border: 0; }
+.chat-header { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 0%, rgba(255, 255, 255, 0.45)), rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.03) 51%, transparent); border-bottom: 1px solid var(--lc-hairline); }
+.guild-title { background: transparent; border-bottom: 1px solid var(--lc-hairline); }
+
+/* The title bar: black glass with a sheen; the close button glowing red. */
+.titlebar { background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.06) 50%, rgba(0, 0, 0, 0.25) 51%, rgba(0, 0, 0, 0.4)), rgba(10, 25, 45, 0.55); backdrop-filter: blur(12px); }
+.titlebar-title { color: #fff; text-shadow: 0 0 8px rgba(255, 255, 255, 0.6), 0 1px 1px rgba(0, 0, 0, 0.6); font-weight: 400; }
+.titlebar-buttons { padding: 0 6px 6px; align-items: flex-start; }
+.titlebar-button { height: 20px; width: 28px; border: 1px solid rgba(0, 0, 0, 0.6); background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.12) 50%, rgba(0, 0, 0, 0.15) 51%); color: #fff; }
+.titlebar-button:first-child { border-radius: 0 0 0 4px; }
+.titlebar-button:hover { background: linear-gradient(180deg, rgba(160, 220, 255, 0.8), rgba(60, 160, 240, 0.6) 50%, rgba(20, 110, 200, 0.7) 51%); }
+.titlebar-button.close { width: 44px; border-radius: 0 0 4px 0; background: linear-gradient(180deg, #e8a493, #d0573c 50%, #b5301a 51%, #c94a2f); }
+.titlebar-button.close:hover { background: linear-gradient(180deg, #ffbfae, #ee6a4c 50%, #d63b20 51%, #e65a3a); box-shadow: 0 0 12px rgba(255, 90, 50, 0.8); }
+
+/* Lists: Vista's soft blue selection with a pale border. */
+.dm.selected, .channel.selected, .settings-nav-item.selected {
+    background: linear-gradient(180deg, rgba(220, 240, 255, 0.95), rgba(190, 225, 252, 0.95));
+    box-shadow: inset 0 0 0 1px #84acdd, inset 0 0 0 2px rgba(255, 255, 255, 0.6); color: #0b2a4a;
+}
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: linear-gradient(180deg, rgba(240, 248, 255, 0.6), rgba(215, 236, 252, 0.6)); box-shadow: inset 0 0 0 1px rgba(160, 200, 240, 0.8); }
+.rail-button { border-radius: 8px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15) 50%, rgba(0, 0, 0, 0.1) 51%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4); }
+.rail-item.selected .rail-button { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 14px rgba(120, 200, 255, 0.9); }
+
+/* Buttons: glossy grey, glowing blue on hover; the primary one glossy blue. */
+.button, .button.secondary {
+    color: #000; border: 1px solid #707070;
+    background: linear-gradient(180deg, #f2f2f2 0%, #ebebeb 49%, #dddddd 50%, #cfcfcf 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+.button:hover:not(:disabled), .button.secondary:hover { border-color: #3c7fb1; background: linear-gradient(180deg, #eaf6fd 0%, #d9f0fc 49%, #bee6fd 50%, #a7d9f5 100%); }
+.button.brand, .button.positive { color: #fff; border-color: #1c4f8a; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+    background: linear-gradient(180deg, #7ab8ee 0%, #3c8fd8 49%, #1f74c8 50%, #2d8ae0 100%); }
+.button.brand:hover { background: linear-gradient(180deg, #9ccbf4 0%, #57a4e6 49%, #2a83d6 50%, #3d9cf0 100%); box-shadow: 0 0 10px rgba(80, 170, 255, 0.8); }
+.button.danger { color: #fff; border-color: #7a1a0a; background: linear-gradient(180deg, #f0a18e, #d6553a 50%, #bd3a20 51%, #cf4a2f); }
+.button.link { border: 0; background: none; box-shadow: none; color: var(--lc-link); }
+.header-button { border-radius: 4px; }
+.header-button:hover:not(:disabled) { background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(220, 240, 255, 0.5)); box-shadow: inset 0 0 0 1px rgba(130, 180, 230, 0.8); }
+
+/* Inputs and the composer: white, a soft blue border that lights on focus. */
+.text-input, .input, .composer { background: color-mix(in srgb, var(--lc-composer) 92%, transparent); border: 1px solid color-mix(in srgb, var(--lc-text) 30%, transparent); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12); color: var(--lc-text); }
+.composer-input { color: var(--lc-text); }
+.text-input:focus, .input:focus { border-color: #3d7bad; box-shadow: 0 0 6px rgba(80, 160, 230, 0.6); }
+
+/* Popups and dialogs: glass frames around white content. */
+.popup, .dropdown-list, .autocomplete { background: color-mix(in srgb, var(--lc-popout) 96%, transparent); border: 1px solid color-mix(in srgb, var(--lc-text) 35%, transparent); border-radius: 4px; box-shadow: 2px 3px 10px rgba(0, 0, 0, 0.35); color: var(--lc-text); }
+.modal { background: color-mix(in srgb, var(--lc-sidebar) 70%, transparent); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.5); }
+.modal-buttons { background: color-mix(in srgb, var(--lc-popout) 90%, transparent); }
+
+/* Calls. */
+.call-slot, .voice-pane-body { background: transparent; }
+.call-tile { border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.6); background: rgba(0, 20, 40, 0.55); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.call-tile.speaking { box-shadow: 0 0 0 2px #6cf, 0 0 18px rgba(100, 200, 255, 0.9); }
+.call-button { border: 1px solid rgba(0, 0, 0, 0.5); background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.15) 50%, rgba(0, 0, 0, 0.15) 51%); color: #fff; }
+.call-button.danger { background: linear-gradient(180deg, #f0a18e, #d6553a 50%, #bd3a20 51%); }
+
+/* Settings over the wallpaper, as a glass window. */
+.settings-screen { background: transparent; padding: 8px; gap: 8px; }
+.settings-nav { background: color-mix(in srgb, var(--lc-sidebar) 55%, transparent); backdrop-filter: blur(16px); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.55); }
+.settings-main { background: color-mix(in srgb, var(--lc-chat-bg) 92%, transparent); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.55); overflow: hidden; }
+
+/* --- Motion, icons and the rest of the window --------------------------------------------------- */
+
+/* Vista's window animation: a quick zoom and fade; hovers glow in slowly. */
+:root {
+    --lc-pop-from: scale(0.92);
+    --lc-pop-duration: 0.24s;
+    --lc-pop-ease: cubic-bezier(0.1, 0.9, 0.2, 1);
+    --lc-modal-from: scale(0.88);
+    --lc-toast-from: translateY(14px) scale(0.95);
+    --lc-hover-speed: 0.3s;
+    --lc-hover-lift: none;
+    --lc-press: none;
+}
+
+/* Icons: a soft white glow, as on Aero's glass. */
+svg.lc-icon { filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25)); }
+.titlebar svg.lc-icon { filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.9)); }
+.call-tile.speaking { animation: aero-glow 1.6s ease-in-out infinite; }
+@keyframes aero-glow { 50% { box-shadow: 0 0 0 2px #6cf, 0 0 30px rgba(100, 200, 255, 1); } }
+
+/* Controls: glossy pieces. */
+.switch { background: linear-gradient(180deg, #e6e6e6, #cfcfcf); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25); }
+.switch.on { background: linear-gradient(180deg, #7ab8ee, #3c8fd8 50%, #1f74c8 51%, #2d8ae0); }
+.switch-knob { background: linear-gradient(180deg, #fff, #e9e9e9 50%, #d5d5d5 51%, #ececec); border: 1px solid #8e8f8f; }
+.range::-webkit-slider-thumb { background: linear-gradient(180deg, #fff, #dfe9f5 50%, #c4d8ee 51%, #d9e6f3); border: 1px solid #3c7fb1; box-shadow: 0 0 6px rgba(80, 160, 230, 0.6); }
+.radio-card { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); border: 1px solid rgba(160, 190, 220, 0.9); border-radius: 6px; }
+.radio-card.selected, .radio-card:has(input:checked) { background: linear-gradient(180deg, rgba(220, 240, 255, 0.95), rgba(190, 225, 252, 0.95)); border-color: #84acdd; }
+.dropdown-button { background: linear-gradient(180deg, #f2f2f2, #ebebeb 49%, #dddddd 50%, #cfcfcf); border: 1px solid #707070; border-radius: 3px; color: #000; }
+.menu-item { border-radius: 3px; }
+.menu-item:hover { background: linear-gradient(180deg, rgba(220, 240, 255, 0.95), rgba(190, 225, 252, 0.95)); box-shadow: inset 0 0 0 1px #84acdd; color: #000; }
+
+/* Messages and their parts. */
+.reaction { border-radius: 4px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(230, 240, 250, 0.7)); border: 1px solid rgba(150, 180, 210, 0.8); }
+.embed { background: color-mix(in srgb, var(--lc-chat-bg) 85%, transparent); border: 1px solid rgba(150, 180, 210, 0.8); border-radius: 6px; }
+.md-mention { background: color-mix(in srgb, var(--lc-brand) 25%, transparent); color: var(--lc-link); border-radius: 3px; }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); border: 1px solid rgba(150, 180, 210, 0.8); border-radius: 6px; }
+
+/* Toasts as Vista's glass notifications; sign-in on the wallpaper. */
+.toast, .update-card, .ring-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2) 50%, rgba(220, 235, 250, 0.35) 51%), rgba(200, 225, 245, 0.55); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35); color: #0b2a4a; }
+.update-card strong, .ring-name { color: #0b2a4a; }
+.signin { background: transparent; }
+.signin-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.05) 51%), rgba(20, 50, 90, 0.45); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 10px; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.friends-tab { border-radius: 4px; }
+.friends-tab.selected { background: linear-gradient(180deg, rgba(220, 240, 255, 0.95), rgba(190, 225, 252, 0.95)); box-shadow: inset 0 0 0 1px #84acdd; color: #0b2a4a; }
+.emoji-picker, .profile-popout { background: color-mix(in srgb, var(--lc-popout) 96%, transparent); border: 1px solid color-mix(in srgb, var(--lc-text) 35%, transparent); border-radius: 6px; color: var(--lc-text); }
+.emoji-cell:hover { background: linear-gradient(180deg, rgba(220, 240, 255, 0.95), rgba(190, 225, 252, 0.95)); box-shadow: inset 0 0 0 1px #84acdd; border-radius: 3px; }
+
+/* The top bar: glossy buttons that glow blue on hover, a rounded white search. */
+.header-text-button { border-radius: 4px; border: 1px solid #707070; color: #000; background: linear-gradient(180deg, #f2f2f2 0%, #ebebeb 49%, #dddddd 50%, #cfcfcf 100%); }
+.header-text-button:hover { border-color: #3c7fb1; background: linear-gradient(180deg, #eaf6fd 0%, #d9f0fc 49%, #bee6fd 50%, #a7d9f5 100%); color: #000; }
+.header-text-button.warn { border-color: #b5301a; color: #8c1f0a; }
+.header-e2e { border-radius: 4px; }
+.search-input { border-radius: 4px; background: color-mix(in srgb, var(--lc-composer) 92%, transparent); border: 1px solid color-mix(in srgb, var(--lc-text) 30%, transparent); color: var(--lc-text); }
+.search-input:focus { border-color: #3d7bad; box-shadow: 0 0 6px rgba(80, 160, 230, 0.6); }
+
+/* Dark schemes: light text on the dark glass of toasts and cards. */
+.lc-scheme-dark :is(.toast, .update-card, .ring-card) { color: var(--lc-text); background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04) 50%, transparent 51%), color-mix(in srgb, var(--lc-popout) 75%, transparent); }
+.lc-scheme-dark :is(.update-card strong, .ring-name) { color: var(--lc-header); }
+.lc-scheme-dark :is(.update-card span, .ring-sub) { color: var(--lc-muted); }

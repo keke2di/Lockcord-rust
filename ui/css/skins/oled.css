@@ -1,0 +1,160 @@
+/* Midnight Pro: near-black with a soft grey glow and a little grain, panels floating as rounded
+   cards with hairline edges, pill buttons and one strong accent (the owner's "darktheme" and
+   "modern" references). Its palettes (theme.js: Ember, True Black OLED, Steel) set the colours and
+   how much glow and grain show (--lc-skin-glow, --lc-skin-grain). */
+
+:root {
+    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --lc-radius-s: 8px;
+    --lc-radius-m: 12px;
+    --lc-radius-l: 18px;
+    --lc-control-height: 34px;
+    --lc-control-radius: 999px;
+    --lc-input-radius: 999px;
+    --lc-item-radius: 10px;
+    --lc-composer-radius: 999px;
+    --lc-panel-gap: 8px;
+    --lc-panel-radius: 18px;
+    --lc-panel-border: 1px solid color-mix(in srgb, var(--lc-header) 7%, transparent);
+    --lc-panel-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    --lc-hairline: color-mix(in srgb, var(--lc-header) 7%, transparent);
+    --lc-titlebar-bg: transparent;
+    --lc-titlebar-height: 34px;
+    --lc-skin-glow: 1;
+    --lc-skin-grain: 0.06;
+    --lc-focus: 0 0 0 2px color-mix(in srgb, var(--lc-brand) 60%, transparent);
+}
+
+/* The backdrop: black, a soft grey light from the top left, fine grain. */
+html, body { background: color-mix(in srgb, var(--lc-rail) 90%, #000); }
+body::before {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+        radial-gradient(60% 55% at 12% 0%, rgba(255, 255, 255, calc(0.10 * var(--lc-skin-glow))) 0%, transparent 70%),
+        radial-gradient(50% 50% at 100% 100%, color-mix(in srgb, var(--lc-brand) calc(10% * var(--lc-skin-glow)), transparent) 0%, transparent 70%);
+}
+body::after {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: var(--lc-skin-grain);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.9'/></svg>");
+}
+.root, .titlebar { z-index: 1; }
+
+/* Panels: dark cards, lit faintly from above. */
+.app { background: transparent; }
+.app > :is(.rail, .sidebar, .chat, .member-panel) {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 3.5%, transparent), color-mix(in srgb, var(--lc-header) 1%, transparent)), var(--lc-sidebar);
+}
+.app > .chat { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 3%, transparent), color-mix(in srgb, var(--lc-header) 0.5%, transparent)), var(--lc-chat-bg); }
+.app > .rail { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 3%, transparent), transparent), var(--lc-rail); }
+.sidebar, .member-panel, .search-panel { border-left: 0; border-right: 0; }
+.user-panel { margin: 8px; border-radius: 14px; border: 1px solid var(--lc-hairline); background: color-mix(in srgb, var(--lc-header) 3%, transparent); }
+.chat-header, .guild-title { border-bottom: 1px solid var(--lc-hairline); }
+
+/* The title bar floats over the backdrop, quiet. */
+.titlebar { background: transparent; }
+.titlebar-title { letter-spacing: 0.02em; }
+
+/* Lists: section labels small and spaced out; the selected item a raised grey pill. */
+.sidebar-title, .channel-category, .members-title { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: color-mix(in srgb, var(--lc-muted) 80%, transparent); }
+.dm, .channel { color: var(--lc-muted); }
+.dm.selected, .channel.selected {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 10%, transparent), color-mix(in srgb, var(--lc-header) 5%, transparent));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-header) 8%, transparent), 0 4px 12px rgba(0, 0, 0, 0.35);
+    color: var(--lc-header);
+}
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: color-mix(in srgb, var(--lc-header) 4%, transparent); color: var(--lc-text); }
+.badge { background: var(--lc-brand); border-radius: 999px; }
+
+/* Rail: rounded squares, the selected one outlined in the accent. */
+.rail-button { border-radius: 14px; background: color-mix(in srgb, var(--lc-header) 5%, transparent); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.rail-item.selected .rail-button { box-shadow: inset 0 0 0 1px var(--lc-brand), 0 0 18px color-mix(in srgb, var(--lc-brand) 30%, transparent); }
+
+/* Controls: pills; the primary one solid accent, the rest glassy grey. */
+.button { font-weight: 600; letter-spacing: 0.01em; }
+.button.brand { box-shadow: 0 6px 18px color-mix(in srgb, var(--lc-brand) 35%, transparent); }
+.button.secondary { background: color-mix(in srgb, var(--lc-header) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-header) 8%, transparent); }
+.button.secondary:hover { background: color-mix(in srgb, var(--lc-header) 10%, transparent); }
+.header-button { border-radius: 999px; }
+.header-button:hover:not(:disabled) { background: color-mix(in srgb, var(--lc-header) 6%, transparent); }
+
+/* The composer and the search box: pills with a hairline. */
+.composer { background: color-mix(in srgb, var(--lc-header) 4%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-header) 9%, transparent); }
+.search-box input, .search-input { border-radius: 999px; background: color-mix(in srgb, var(--lc-header) 5%, transparent); border: 1px solid var(--lc-hairline); }
+
+/* Cards in the timeline and popups. */
+.popup, .modal, .dropdown-list, .autocomplete { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-popout) 94%, var(--lc-header)), var(--lc-popout)); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6); }
+.lc-messages-cards .message { background: color-mix(in srgb, var(--lc-header) 2.5%, transparent); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.status-card, .e2e-note { letter-spacing: 0.01em; }
+
+/* Calls: tiles as dark cards with a soft accent ring when speaking. */
+.call-slot, .voice-pane-body { background: transparent; }
+.call-tile { border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-popout) 92%, var(--lc-header)), var(--lc-deep)); border: 1px solid var(--lc-hairline); }
+.call-tile.speaking { box-shadow: 0 0 0 2px var(--lc-positive), 0 0 24px color-mix(in srgb, var(--lc-positive) 35%, transparent); }
+.call-button { background: color-mix(in srgb, var(--lc-header) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-header) 8%, transparent); }
+.call-button.danger { background: var(--lc-danger); box-shadow: 0 6px 18px color-mix(in srgb, var(--lc-danger) 35%, transparent); }
+
+/* Settings: the same cards and labels. */
+.settings-screen { background: var(--lc-deep); }
+.settings-nav { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 3%, transparent), transparent); }
+.settings-nav-item.selected { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-header) 10%, transparent), color-mix(in srgb, var(--lc-header) 5%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-header) 8%, transparent); }
+.section-title { letter-spacing: -0.01em; }
+.skin-card, .theme-row { border-radius: 14px; }
+
+/* --- Motion, icons and the rest of the window --------------------------------------------------- */
+
+:root {
+    --lc-pop-from: translateY(10px) scale(0.97);
+    --lc-pop-duration: 0.22s;
+    --lc-pop-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --lc-modal-from: translateY(18px) scale(0.98);
+    --lc-toast-from: translateY(16px) scale(0.98);
+    --lc-hover-speed: 0.2s;
+    --lc-hover-lift: translateY(-1px);
+    --lc-press: scale(0.97);
+}
+
+/* Line icons: the glyphs drawn as thin outlines. */
+svg.lc-icon:not([width="12"]):not([width="14"]) path { fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linejoin: round; }
+.button.brand svg.lc-icon path, .call-button.danger svg.lc-icon path, .call-button.accept svg.lc-icon path { fill: currentColor; stroke: none; }
+.call-tile.speaking { animation: oled-glow 1.8s ease-in-out infinite; }
+@keyframes oled-glow { 50% { box-shadow: 0 0 0 2px var(--lc-positive), 0 0 34px color-mix(in srgb, var(--lc-positive) 50%, transparent); } }
+
+/* Controls. */
+.switch { background: color-mix(in srgb, var(--lc-header) 10%, transparent); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.switch.on { background: var(--lc-brand); box-shadow: 0 0 14px color-mix(in srgb, var(--lc-brand) 45%, transparent); }
+.switch-knob { background: #f4f4f5; }
+.range::-webkit-slider-thumb { background: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lc-brand) 25%, transparent); }
+.radio-card { background: color-mix(in srgb, var(--lc-header) 3%, transparent); border: 1px solid var(--lc-hairline); border-radius: 14px; }
+.radio-card.selected, .radio-card:has(input:checked) { border-color: var(--lc-brand); background: color-mix(in srgb, var(--lc-brand) 8%, transparent); }
+.dropdown-button { border-radius: 999px; background: color-mix(in srgb, var(--lc-header) 5%, transparent); border: 1px solid var(--lc-hairline); }
+.menu-item { border-radius: 8px; }
+.menu-item:hover { background: color-mix(in srgb, var(--lc-header) 7%, transparent); }
+
+/* Messages and their parts. */
+.reaction { border-radius: 999px; background: color-mix(in srgb, var(--lc-header) 4%, transparent); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.embed { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-popout) 94%, var(--lc-header)), var(--lc-popout)); border-radius: 14px; border: 1px solid var(--lc-hairline); }
+.md-mention { background: color-mix(in srgb, var(--lc-brand) 18%, transparent); color: color-mix(in srgb, var(--lc-brand) 70%, #fff); border-radius: 6px; }
+.md-code, .md-pre { background: var(--lc-deep); border: 1px solid var(--lc-hairline); }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: color-mix(in srgb, var(--lc-header) 3%, transparent); border: 1px solid var(--lc-hairline); border-radius: 14px; }
+
+/* Toasts, cards, sign-in, friends, pickers, profiles. */
+.toast, .update-card, .ring-card { background: color-mix(in srgb, var(--lc-popout) 92%, transparent); backdrop-filter: blur(12px); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 999px; }
+.update-card, .ring-card { border-radius: 18px; }
+.signin { background: transparent; }
+.signin-card { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-popout) 94%, var(--lc-header)), var(--lc-popout)); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 22px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 80px color-mix(in srgb, var(--lc-brand) 12%, transparent); }
+.friends-tab { border-radius: 999px; }
+.friends-tab.selected { background: color-mix(in srgb, var(--lc-header) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-header) 8%, transparent); }
+.friend { border-radius: 12px; }
+.emoji-picker, .profile-popout { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-popout) 94%, var(--lc-header)), var(--lc-popout)); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 18px; }
+.emoji-cell:hover { background: color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 10px; }
+
+/* Light schemes: lighter shadows, the backdrop a pale grey. */
+.lc-scheme-light .app > :is(.rail, .sidebar, .chat, .member-panel) { --lc-panel-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); }
+.lc-scheme-light .popup, .lc-scheme-light .modal, .lc-scheme-light .dropdown-list, .lc-scheme-light .autocomplete { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15); }
+.lc-scheme-light body::before { background: radial-gradient(60% 55% at 12% 0%, color-mix(in srgb, var(--lc-brand) calc(8% * var(--lc-skin-glow)), transparent) 0%, transparent 70%); }
+
+/* The top bar: pill icon buttons, pill text buttons, a pill search. */
+.header-text-button { border-radius: 999px; border: 1px solid var(--lc-hairline); background: color-mix(in srgb, var(--lc-header) 4%, transparent); }
+.header-text-button:hover { background: color-mix(in srgb, var(--lc-header) 8%, transparent); }
+.header-e2e { border-radius: 999px; }
+.search-input { border-radius: 999px; background: color-mix(in srgb, var(--lc-header) 5%, transparent); border: 1px solid var(--lc-hairline); }

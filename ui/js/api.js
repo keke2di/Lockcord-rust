@@ -60,14 +60,7 @@ export const api = {
   // Settings and themes (settings.rs): kept by Rust per profile; the window keeps nothing.
   settingsGet: () => call('settings_get'),
   settingsSave: (settings) => call('settings_save', { settings }),
-  themeGet: (id) => call('theme_get', { id }),
-  themeSave: (theme) => call('theme_save', { theme }),
-  themeDelete: (id) => call('theme_delete', { id }),
-  themeAssetAdd: (id, name, bytes) => call('theme_asset_add', bytes, { headers: { 'lc-theme': id, 'lc-name': encodeURIComponent(name) } }),
-  themeAssetRemove: (id, name) => call('theme_asset_remove', { id, name }),
   // Native dialogs in Rust: the window never sees a path.
-  themeImport: () => call('theme_import'),
-  themeExport: (id) => call('theme_export', { id }),
   // Purge and Guard (deletion.rs, guard.rs): every delete goes through Rust's one paced queue.
   purgeScan: (channels, filters) => call('purge_scan', { channels, filters }),
   purgeRun: () => call('purge_run'),

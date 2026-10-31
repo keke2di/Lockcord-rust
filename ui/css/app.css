@@ -69,6 +69,23 @@
     --lc-gutter: calc(var(--lc-avatar-size) + 32px);
     --lc-group-gap: 17px;
 
+    /* Structure: what a skin (css/skins/*.css) reshapes. Controls (buttons, inputs), list items
+       (DMs, channels), the panels' own frames and the gaps between them, the title bar. */
+    --lc-control-height: 32px;
+    --lc-control-radius: var(--lc-radius-m);
+    --lc-input-radius: var(--lc-radius-m);
+    --lc-item-radius: var(--lc-radius-s);
+    --lc-border-width: 1px;
+    --lc-weight-strong: 600;
+    --lc-panel-gap: 0px;
+    --lc-panel-radius: 0px;
+    --lc-panel-border: none;
+    --lc-panel-shadow: none;
+    --lc-titlebar-height: 32px;
+    --lc-titlebar-bg: var(--lc-rail);
+    --lc-titlebar-text: var(--lc-muted);
+    --lc-focus: 0 0 0 2px color-mix(in srgb, var(--lc-brand) 70%, transparent);
+
     /* Motion: 1 normal, 0 for none (every transition's duration is multiplied by it) */
     --lc-motion: 1;
 
@@ -96,7 +113,7 @@ html, body {
     background: var(--lc-chat-bg);
     color: var(--lc-text);
     font-family: var(--lc-font);
-    font-size: var(--lc-font-size);
+    font-size: calc(var(--lc-font-size) * var(--lc-text-scale, 1));
     line-height: var(--lc-line-height);
     -webkit-font-smoothing: antialiased;
 }
@@ -495,11 +512,11 @@ button:disabled { cursor: not-allowed; }
 /* --- Buttons ------------------------------------------------------------------------------ */
 
 .button {
-    height: 32px;
+    height: var(--lc-control-height);
     min-width: 60px;
     padding: 2px 16px;
     border: 0;
-    border-radius: var(--lc-radius-m);
+    border-radius: var(--lc-control-radius);
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--lc-on-accent);
@@ -718,8 +735,22 @@ button:disabled { cursor: not-allowed; }
 
 /* --- The window ---------------------------------------------------------------------------- */
 
-.root, .app { height: 100vh; }
-.app { display: flex; flex-direction: row; }
+/* The window: LockCord's own title bar on top (titlebar.js), the app under it. Panels sit in it
+   edge to edge by default; a skin can float them apart (--lc-panel-gap) as framed cards. */
+.root, .app { height: calc(100vh - var(--lc-titlebar-height)); }
+.root { margin-top: var(--lc-titlebar-height); }
+.app { display: flex; flex-direction: row; gap: var(--lc-panel-gap); padding: var(--lc-panel-gap); box-sizing: border-box; }
+.app > :is(.rail, .sidebar, .chat, .member-panel) { border-radius: var(--lc-panel-radius); border: var(--lc-panel-border); box-shadow: var(--lc-panel-shadow); overflow: hidden; }
+:focus-visible { outline: none; box-shadow: var(--lc-focus); }
+
+.titlebar { position: fixed; top: 0; left: 0; right: 0; z-index: 60; height: var(--lc-titlebar-height); display: flex; align-items: center; background: var(--lc-titlebar-bg); color: var(--lc-titlebar-text); user-select: none; }
+.titlebar-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 100%; padding-left: 12px; font-size: 0.8125rem; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.titlebar-title svg { flex: none; color: var(--lc-brand); }
+.titlebar-buttons { display: flex; height: 100%; }
+.titlebar-button { width: 46px; height: 100%; border: 0; display: flex; align-items: center; justify-content: center; background: none; color: var(--lc-titlebar-text); }
+.titlebar-button:hover { background: var(--lc-overlay); color: var(--lc-header); }
+.titlebar-button.close:hover { background: #e81123; color: #fff; }
+.titlebar-button svg { width: 10px; height: 10px; }
 
 .sidebar {
     flex: none;
@@ -746,7 +777,7 @@ button:disabled { cursor: not-allowed; }
     margin: 1px 0;
     padding: 0 8px;
     border: 0;
-    border-radius: var(--lc-radius-s);
+    border-radius: var(--lc-item-radius);
     background: none;
     color: var(--lc-muted);
     font-size: 1rem;
@@ -830,7 +861,7 @@ button:disabled { cursor: not-allowed; }
 
 /* --- Sign-in ------------------------------------------------------------------------------- */
 
-.signin { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--lc-deep); }
+.signin { height: calc(100vh - var(--lc-titlebar-height)); display: flex; align-items: center; justify-content: center; background: var(--lc-deep); }
 .signin-card {
     width: min(440px, calc(100% - 32px));
     padding: 32px;
@@ -856,7 +887,7 @@ button:disabled { cursor: not-allowed; }
     height: 40px;
     padding: 0 10px;
     border: 0;
-    border-radius: var(--lc-radius-s);
+    border-radius: var(--lc-input-radius);
     background: var(--lc-deep);
     color: var(--lc-text);
     font: inherit;
@@ -1082,7 +1113,7 @@ button:disabled { cursor: not-allowed; }
     margin: 1px 0;
     padding: 0 8px;
     border: 0;
-    border-radius: var(--lc-radius-s);
+    border-radius: var(--lc-item-radius);
     background: none;
     color: var(--lc-muted);
     font: inherit;
@@ -1141,19 +1172,19 @@ button:disabled { cursor: not-allowed; }
 .rail { position: relative; z-index: 3; }
 .app:not(.side-pinned) .sidebar {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: var(--lc-rail-width);
+    top: var(--lc-panel-gap);
+    bottom: var(--lc-panel-gap);
+    left: calc(var(--lc-rail-width) + var(--lc-panel-gap) * 2);
     z-index: 2;
-    /* Behind the rail, not hidden: tabbing into it still opens it. */
-    transform: translateX(-100%);
+    /* Off to the left (behind the rail), not hidden: tabbing into it still opens it. */
+    transform: translateX(calc(-100% - var(--lc-rail-width) - var(--lc-panel-gap) * 3));
     transition: transform calc(0.18s * var(--lc-motion)) ease, box-shadow calc(0.18s * var(--lc-motion)) ease;
 }
 .app.side-open:not(.side-pinned) .sidebar {
     transform: none;
     box-shadow: var(--lc-shadow-side);
 }
-.side-edge { position: absolute; top: 0; bottom: 0; left: var(--lc-rail-width); width: 10px; z-index: 1; }
+.side-edge { position: absolute; top: 0; bottom: 0; left: calc(var(--lc-rail-width) + var(--lc-panel-gap)); width: calc(10px + var(--lc-panel-gap)); z-index: 1; }
 .app.side-pinned .side-edge { display: none; }
 .panel-button.on { color: var(--lc-interactive-hover); background: var(--lc-sidebar-selected); }
 @media (prefers-reduced-motion: reduce) {
@@ -1188,7 +1219,7 @@ button:disabled { cursor: not-allowed; }
 
 /* --- The settings window (settings.js, controls.js), in Discord's style -------------------------- */
 
-.settings-screen { position: fixed; inset: 0; z-index: 30; display: flex; background: var(--lc-chat-bg); }
+.settings-screen { position: fixed; inset: var(--lc-titlebar-height) 0 0 0; z-index: 30; display: flex; background: var(--lc-chat-bg); }
 
 /* The nav: you at the top, the pages with their icons, the open page's sections under it. */
 .settings-nav {
@@ -1238,7 +1269,7 @@ button:disabled { cursor: not-allowed; }
 .spaced { margin-top: 20px; }
 .empty-note { padding: 32px 0; text-align: center; color: var(--lc-muted); }
 .text-input {
-    height: 40px; padding: 0 12px; border: 1px solid var(--lc-border); border-radius: var(--lc-radius-m);
+    height: 40px; padding: 0 12px; border: var(--lc-border-width) solid var(--lc-border); border-radius: var(--lc-input-radius);
     background: var(--lc-deep); color: var(--lc-text); font: inherit; font-size: 1rem; min-width: 0;
 }
 .text-input:focus { outline: none; border-color: var(--lc-brand); }
@@ -1801,7 +1832,7 @@ button.member { width: 100%; border: 0; background: none; font: inherit; text-al
 .voice-avatar { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; font-size: 10px; flex: none; box-shadow: 0 0 0 2px transparent; }
 .voice-member.speaking .voice-avatar { box-shadow: 0 0 0 2px var(--lc-positive); }
 .voice-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ring-slot { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 35; }
+.ring-slot { position: fixed; top: calc(var(--lc-titlebar-height) + 16px); left: 50%; transform: translateX(-50%); z-index: 35; }
 .ring-slot:empty { display: none; }
 .ring-cards { display: flex; flex-direction: column; gap: 8px; }
 .ring-card { display: flex; align-items: center; gap: 12px; width: 340px; padding: 12px; border-radius: var(--lc-radius-l); background: var(--lc-popout); box-shadow: var(--lc-shadow-popout); }
@@ -1847,3 +1878,119 @@ button.member { width: 100%; border: 0; background: none; font: inherit; text-al
 .ac-emoji { width: 22px; height: 22px; object-fit: contain; flex: none; }
 .ac-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-sub { margin-left: auto; color: var(--lc-muted); font-size: 0.8125rem; white-space: nowrap; }
+
+/* --- Skins (theme.js SKINS) -------------------------------------------------------------------- */
+
+.skin-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.skin-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 2px solid transparent; border-radius: var(--lc-radius-m); background: var(--lc-card); color: var(--lc-text); text-align: left; cursor: pointer; font: inherit; }
+.skin-card:hover:not(:disabled) { border-color: var(--lc-border); }
+.skin-card.selected { border-color: var(--lc-brand); }
+.skin-card:disabled { cursor: default; opacity: 0.55; }
+.skin-mini { display: flex; height: 72px; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px var(--lc-border); }
+.skin-mini-rail { width: 14%; }
+.skin-mini-side { width: 28%; }
+.skin-mini-chat { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 5px; padding: 8px; }
+.skin-mini-line { height: 5px; width: 80%; border-radius: 3px; background: rgba(128, 128, 128, 0.45); }
+.skin-mini-line.short { width: 50%; }
+.skin-mini-button { height: 9px; width: 34%; border-radius: 5px; }
+.skin-card-name { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--lc-header); }
+.skin-soon { padding: 0 6px; border-radius: 8px; background: var(--lc-overlay); color: var(--lc-muted); font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; }
+.skin-card-text { font-size: 0.8125rem; color: var(--lc-muted); line-height: 1.3; }
+
+/* --- The default skin, tidied (C1) ------------------------------------------------------------------
+   Hairline borders between panels instead of heavy shadows, one radius family, slimmer scrollbars,
+   calmer hovers and a clearer selected state. Everything still reads from tokens, so a skin
+   (css/skins/*.css) or a theme can take any of it further. */
+
+:root {
+    --lc-hairline: color-mix(in srgb, var(--lc-text) 9%, transparent);
+    --lc-item-radius: 6px;
+    --lc-control-height: 34px;
+    --lc-composer-radius: 12px;
+    --lc-shadow-header: 0 1px 0 var(--lc-hairline);
+}
+
+/* Panels: a hairline where two meet. */
+.sidebar { border-right: 1px solid var(--lc-hairline); }
+.member-panel, .search-panel { border-left: 1px solid var(--lc-hairline); }
+.user-panel { border-top: 1px solid var(--lc-hairline); }
+.chat-header { box-shadow: none; border-bottom: 1px solid var(--lc-hairline); }
+.guild-title { border-bottom: 1px solid var(--lc-hairline); box-shadow: none; }
+
+/* Lists: a softer hover, a selected item that stands out without shouting. */
+.dm.selected, .channel.selected { background: color-mix(in srgb, var(--lc-brand) 16%, var(--lc-sidebar-selected)); color: var(--lc-header); }
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: var(--lc-sidebar-hover); }
+.sidebar-title, .channel-category { letter-spacing: 0.04em; }
+
+/* Controls. */
+.composer { border-radius: var(--lc-composer-radius); box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.button.secondary { box-shadow: inset 0 0 0 1px var(--lc-hairline); }
+.popup, .modal, .dropdown-list { border-radius: var(--lc-radius-l); border: 1px solid var(--lc-hairline); }
+.modal { overflow: hidden; }
+.text-input, .input { border: 1px solid var(--lc-hairline); }
+.text-input:focus, .input:focus { border-color: color-mix(in srgb, var(--lc-brand) 70%, transparent); outline: none; }
+
+/* Keyboard focus on buttons and links only (text boxes show their own caret and border). */
+:focus-visible { box-shadow: none; }
+:is(button, a, [role="switch"], [role="option"]):focus-visible { outline: none; box-shadow: var(--lc-focus); }
+
+/* Slim scrollbars that appear on hover. */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: var(--lc-overlay) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: transparent; border: 3px solid transparent; border-radius: 8px; background-clip: padding-box; }
+:hover::-webkit-scrollbar-thumb { background-color: var(--lc-overlay); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* The call stage: a little depth behind the tiles. */
+.call-slot, .voice-pane-body { background: radial-gradient(120% 140% at 50% 0%, color-mix(in srgb, var(--lc-brand) 7%, var(--lc-deep)) 0%, var(--lc-deep) 60%); }
+.call-tile { border: 1px solid var(--lc-hairline); }
+
+/* Settings: the same hairlines. */
+.settings-nav { border-right: 1px solid var(--lc-hairline); }
+.settings-head { border-bottom: 1px solid var(--lc-hairline); }
+
+/* --- Motion and icons, per skin --------------------------------------------------------------------
+   Popups, menus, dialogs, toasts and cards come in with the skin's own animation; hovers move at its
+   speed and may lift. Each skin sets these tokens (css/skins/*.css); all of it scales with
+   --lc-motion (0 = no motion) and stops for "reduce motion". Icons (dom.js icon()) carry .lc-icon,
+   so a skin can draw them as lines, outline them, or make them glow. */
+
+:root {
+    --lc-pop-from: translateY(4px) scale(0.98);
+    --lc-pop-duration: 0.14s;
+    --lc-pop-ease: ease-out;
+    --lc-pop-steps: linear;
+    --lc-modal-from: scale(0.96);
+    --lc-toast-from: translateY(12px);
+    --lc-hover-speed: 0.15s;
+    --lc-hover-lift: none;
+    --lc-press: none;
+}
+
+.popup, .dropdown-list, .autocomplete, .context-menu, .emoji-picker, .profile-popout, .status-menu {
+    animation: lc-pop calc(var(--lc-pop-duration) * var(--lc-motion)) var(--lc-pop-ease) both;
+}
+.modal { animation: lc-modal calc(var(--lc-pop-duration) * 1.4 * var(--lc-motion)) var(--lc-pop-ease) both; }
+.toast, .update-card, .ring-card { animation: lc-toast calc(var(--lc-pop-duration) * 1.6 * var(--lc-motion)) var(--lc-pop-ease) both; }
+@keyframes lc-pop { from { opacity: 0; transform: var(--lc-pop-from); } }
+@keyframes lc-modal { from { opacity: 0; transform: var(--lc-modal-from); } }
+@keyframes lc-toast { from { opacity: 0; transform: var(--lc-toast-from); } }
+
+.button, .dm, .channel, .header-button, .call-button, .rail-button, .skin-card, .theme-tile, .radio-card, .friend, .menu-item, .emoji-cell, .reaction, .titlebar-button, .settings-nav-item {
+    transition: background-color calc(var(--lc-hover-speed) * var(--lc-motion)), color calc(var(--lc-hover-speed) * var(--lc-motion)),
+        box-shadow calc(var(--lc-hover-speed) * var(--lc-motion)), border-color calc(var(--lc-hover-speed) * var(--lc-motion)),
+        transform calc(var(--lc-hover-speed) * var(--lc-motion)) var(--lc-pop-ease), filter calc(var(--lc-hover-speed) * var(--lc-motion));
+}
+:is(.button, .call-button, .header-button, .skin-card):hover:not(:disabled) { transform: var(--lc-hover-lift); }
+:is(.button, .call-button):active:not(:disabled) { transform: var(--lc-press); }
+
+.lc-icon { flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .popup, .dropdown-list, .autocomplete, .context-menu, .emoji-picker, .profile-popout, .status-menu, .modal, .toast, .update-card, .ring-card { animation: none; }
+    :is(.button, .call-button, .header-button, .skin-card):hover:not(:disabled) { transform: none; }
+}
+
+/* The Themes page: room between the preview and the first section. */
+.settings-preview { margin-bottom: 24px; }
