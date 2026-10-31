@@ -1820,3 +1820,30 @@ button.member { width: 100%; border: 0; background: none; font: inherit; text-al
 .mic-test { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .mic-meter { flex: 1; height: 8px; border-radius: 4px; background: var(--lc-deep); overflow: hidden; }
 .mic-meter-fill { width: 0; height: 100%; background: var(--lc-positive); transition: width 0.08s; }
+
+/* --- Updates ----------------------------------------------------------------------------------- */
+
+.update-slot { position: fixed; right: 16px; bottom: 16px; z-index: 34; }
+.update-slot:empty { display: none; }
+.update-card { display: flex; align-items: center; gap: 12px; max-width: 460px; padding: 10px 12px; border-radius: var(--lc-radius-l); background: var(--lc-popout); box-shadow: var(--lc-shadow-popout); border: 1px solid var(--lc-border); }
+.update-text { display: flex; flex-direction: column; min-width: 0; font-size: 0.875rem; }
+.update-text strong { color: var(--lc-header); }
+.update-text span { color: var(--lc-muted); font-size: 0.8125rem; }
+.update-buttons { display: flex; gap: 4px; flex: none; }
+.update-notes { max-height: 50vh; overflow: auto; margin: 12px 0 16px; padding: 12px; border-radius: var(--lc-radius-s); background: var(--lc-deep); white-space: pre-wrap; font: 0.875rem var(--lc-font); color: var(--lc-text); }
+
+/* --- Composer autocomplete (autocomplete.js) --------------------------------------------------- */
+
+.composer-wrap, .body.editor { position: relative; }
+.autocomplete { position: absolute; left: 16px; right: 16px; bottom: calc(100% - 8px); z-index: 6; max-height: 360px; overflow-y: auto; padding: 8px; border-radius: var(--lc-radius-m); background: var(--lc-popout); border: 1px solid var(--lc-border); box-shadow: var(--lc-shadow-popout); }
+.body.editor .autocomplete { left: 0; right: 0; bottom: calc(100% + 4px); }
+.autocomplete[hidden] { display: none; }
+.ac-title { padding: 2px 8px 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--lc-muted); }
+.ac-item { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; padding: 6px 8px; border-radius: var(--lc-radius-s); background: none; color: var(--lc-text); text-align: left; cursor: pointer; font: inherit; }
+.ac-item.selected { background: var(--lc-sidebar-selected); color: var(--lc-header); }
+.ac-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; font-size: 10px; flex: none; }
+.ac-glyph { width: 24px; text-align: center; flex: none; color: var(--lc-muted); font-weight: 700; }
+.ac-glyph.emoji { font-size: 1.125rem; font-weight: 400; color: inherit; }
+.ac-emoji { width: 22px; height: 22px; object-fit: contain; flex: none; }
+.ac-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac-sub { margin-left: auto; color: var(--lc-muted); font-size: 0.8125rem; white-space: nowrap; }

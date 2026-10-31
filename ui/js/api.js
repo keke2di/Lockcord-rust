@@ -104,6 +104,12 @@ export const api = {
   // A video tile's newest picture as raw bytes (empty if nothing newer than `since`).
   callFrame: (key, since, maxWidth) => call('call_frame', { key, since, maxWidth }),
   voiceDevices: () => call('voice_devices'),
+  // The composer's @mention search in a server (main.rs member_search; answered in lc://members-chunk).
+  memberSearch: (guildId, query, nonce) => call('member_search', { guildId, query, nonce }),
+  // Updates (update.rs): force asks GitHub now; otherwise at most once a day, if it's on.
+  updateCheck: (force) => call('update_check', { force: !!force }),
+  updateDismiss: (version) => call('update_dismiss', { version }),
+  updateInstall: () => call('update_install'),
   voiceTest: (on) => call('voice_test', { on }),
   voiceTestLevel: () => call('voice_test_level'),
   // The desktop (desktop.rs): which chat is on screen, saving files to a folder Rust keeps.

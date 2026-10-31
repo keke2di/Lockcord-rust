@@ -35,6 +35,19 @@ export function renderApp(body, ctx, redraw) {
       { value: 'off', label: 'Off', description: null },
     ], s.notify || 'name', (v) => { ctx.saveAppSetting({ notify: v }); redraw(); }),
     h('div', { class: 'control-description spaced' }, 'For DMs, and for mentions in servers; not for muted chats, nor the chat on screen. Secret chats never notify.')));
+  // Updates: the daily check, and checking now.
+  const info = ctx.updateInfo && ctx.updateInfo();
+  const status = h('div', { class: 'control-description' }, info ? updateLine(info) : '');
+  const checkButton = h('button', { type: 'button', class: 'button secondary', onclick: () => {
+    checkButton.disabled = true;
+    status.textContent = 'Checking…';
+    ctx.checkUpdates().then(() => redraw()).catch((e) => { status.textContent = String(e); checkButton.disabled = false; });
+  } }, 'Check now');
+  body.appendChild(section('Updates',
+    toggle('Check for updates', 'Once a day LockCord asks GitHub (api.github.com) for its newest release. Nothing about you is sent.', s.checkUpdates !== false, (on) => ctx.saveAppSetting({ checkUpdates: on })),
+    h('div', { class: 'file-pick' }, checkButton,
+      info && info.release ? h('button', { type: 'button', class: 'button brand', onclick: () => ctx.installUpdate() }, info.installed ? 'Update to ' + info.release.version : 'Get ' + info.release.version) : null),
+    status));
   const folder = h('span', { class: 'file-pick-name' }, '…');
   ctx.saveFolder().then((r) => { folder.textContent = (r && r.folder) || 'LockCord'; }).catch(() => {});
   body.appendChild(section('Saving files',
@@ -145,6 +158,13 @@ export function renderVoice(body, ctx, redraw) {
     h('div', null, 'Calls go to Discord’s voice servers directly, as Discord’s own app does, so Discord sees your IP address. Voice, camera and screen are end-to-end encrypted with Discord’s DAVE protocol: compare the call’s code to check it.'),
     h('div', null, 'Your microphone, camera and screen open only during a call or this test. Nothing is recorded or kept.')));
   return stop;
+}
+
+function updateLine(info) {
+  const when = info.lastCheck ? 'Last checked ' + new Date(info.lastCheck).toLocaleString() + '. ' : '';
+  if (info.problem) return when + info.problem;
+  if (info.release) return when + 'LockCord ' + info.release.version + ' is out (you have ' + info.current + ').';
+  return when + 'You have the newest LockCord (' + info.current + ').';
 }
 
 // --- Encrypted DMs ------------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import { friendPicker, myDot, profileCard, STATUS_WORDS, statusMenu } from './pr
 import { FORUM_TYPES, pinsPopup, renderForum, threadsPopup } from './threads.js';
 import { createSearchBox, parseQuery, renderResults } from './search.js';
 import { createCalls } from './call.js';
+import { attachAutocomplete } from './autocomplete.js';
 
 const MAX_TEXT = 4000;
 const SECRET_DELETE_TEXT = 'Are you sure you want to delete this message? It goes from their screen too.';
@@ -152,7 +153,29 @@ const typingLine = h('div', { class: 'typing', 'aria-live': 'polite' });
 // After a jump to an old message the newest ones aren't loaded: this bar brings them back.
 const presentBar = h('div', { class: 'present-bar', hidden: true }, h('span', null, 'You’re viewing older messages'),
   h('button', { type: 'button', class: 'present-button', onclick: () => jumpToPresent() }, 'Jump To Present'));
-const form = h('form', { class: 'composer-wrap', onsubmit: (e) => { e.preventDefault(); submit(); } }, presentBar, composerMark, translateHint, replyBar, uploads, composer, fileInput, typingLine);
+// @, # and : suggestions at the caret (autocomplete.js), for the composer and the edit box.
+const acContext = {
+  where: () => {
+    const dm = dmById(state.current);
+    if (!dm) return null;
+    const guild = dm.guild_id ? guildById(dm.guild_id) : null;
+    return { channel: dm.thread && dm.parent_id ? dm.parent_id : dm.id, guild, dm, private: !guild };
+  },
+  // People seen in this server this session: its member list, and who wrote in its channels.
+  known: (guild) => {
+    const out = [];
+    if (state.memberList && state.guildId === guild.id) for (const it of state.memberList.items) if (it.member) out.push({ user: it.member.user, nick: it.member.nick });
+    for (const [id, list] of state.messages) {
+      const c = dmById(id);
+      if (!c || c.guild_id !== guild.id) continue;
+      for (const m of list.slice(-200)) out.push({ user: m.author, nick: m.member && m.member.nick });
+    }
+    return out;
+  },
+  emojiUrl: (id, animated) => emojiUrl(id, animated),
+};
+const composerSuggest = attachAutocomplete(textarea, acContext);
+const form = h('form', { class: 'composer-wrap', onsubmit: (e) => { e.preventDefault(); submit(); } }, presentBar, composerMark, translateHint, replyBar, uploads, composerSuggest.box, composer, fileInput, typingLine);
 const memberPanel = h('aside', { class: 'member-panel', 'aria-label': 'Members' });
 const searchPanel = h('aside', { class: 'search-panel', 'aria-label': 'Search results', hidden: true });
 // A DM's call: its stage while this device is in it, or "Call in progress".
@@ -164,12 +187,14 @@ const voiceStage = h('div', { class: 'voice-pane-body' });
 const voicePane = h('main', { class: 'chat voice-pane' }, voiceHeader, voiceStage);
 // Calls ringing this account, over everything.
 const ringSlot = h('div', { class: 'ring-slot' });
+// A newer LockCord (update.rs), in the corner until it's installed or put off.
+const updateSlot = h('div', { class: 'update-slot' });
 const forumPane = h('main', { class: 'chat forum' });
 const search = createSearchBox((text) => runSearch(text), () => closeSearch());
 const friendsPane = h('main', { class: 'chat friends' });
 const layer = h('div', { class: 'layer' });
 const sideEdge = h('div', { class: 'side-edge', 'aria-hidden': 'true' });
-const mainScreen = h('div', { class: 'app' }, rail, sidebar, friendsPane, sideEdge, ringSlot, layer);
+const mainScreen = h('div', { class: 'app' }, rail, sidebar, friendsPane, sideEdge, ringSlot, updateSlot, layer);
 
 // The side panel: tucked behind the rail so the chat has the room, sliding out while the mouse
 // is over the rail, the panel or the edge beside the rail (or the keyboard is in it), unless
@@ -1406,7 +1431,8 @@ function editorFor(key, original, onSave, onEmpty) {
   });
   input.addEventListener('input', () => autosize(input));
   setTimeout(() => { autosize(input); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 0);
-  const node = h('div', { class: 'body editor' }, input, h('div', { class: 'edit-hint' }, 'escape to ',
+  const suggest = attachAutocomplete(input, acContext);
+  const node = h('div', { class: 'body editor' }, suggest.box, input, h('div', { class: 'edit-hint' }, 'escape to ',
     h('a', { href: '#', onclick: (e) => { e.preventDefault(); cancel(); } }, 'cancel'), ' • enter to ',
     h('a', { href: '#', onclick: (e) => { e.preventDefault(); e.stopPropagation(); save(); } }, 'save')));
   liveEditor = { key, node, input };
@@ -1752,6 +1778,55 @@ function showModal(node) {
   layer.appendChild(node);
 }
 
+// --- Updates (update.rs) -------------------------------------------------------------------------
+
+// What the last check found: { current, enabled, lastCheck, installed, release, problem }.
+let updateInfo = null;
+let updating = null; // { done, total } while the installer downloads
+
+function drawUpdate() {
+  updateSlot.textContent = '';
+  const r = updateInfo && updateInfo.release;
+  if (!r) return;
+  const pct = updating && updating.total ? Math.round((updating.done / updating.total) * 100) : null;
+  updateSlot.appendChild(h('div', { class: 'update-card', role: 'status' },
+    h('div', { class: 'update-text' }, h('strong', null, 'LockCord ' + r.version + ' is out'),
+      h('span', null, updating ? (pct === null ? 'Downloading…' : 'Downloading… ' + pct + '%') : 'You have ' + updateInfo.current + '.')),
+    updating ? null : h('div', { class: 'update-buttons' },
+      h('button', { type: 'button', class: 'button link small', onclick: () => showNotes(r) }, 'What’s new'),
+      h('button', { type: 'button', class: 'button link small', onclick: () => { api.updateDismiss(r.version).catch(() => {}); updateInfo.release = null; drawUpdate(); } }, 'Later'),
+      h('button', { type: 'button', class: 'button brand small', onclick: () => installUpdate(r) }, updateInfo.installed ? 'Update' : 'Get it'))));
+}
+
+function showNotes(r) {
+  showModal(h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', onclick: (e) => e.stopPropagation() },
+    h('h2', { class: 'modal-title' }, 'What’s new in ' + r.version),
+    h('pre', { class: 'update-notes' }, r.notes || 'No notes.'),
+    h('div', { class: 'modal-buttons' },
+      h('button', { type: 'button', class: 'button link', onclick: closeLayer }, 'Close'),
+      h('button', { type: 'button', class: 'button brand', onclick: () => { closeLayer(); installUpdate(r); } }, updateInfo.installed ? 'Update' : 'Get it'))));
+}
+
+// Installed: downloaded, checked against GitHub's checksum, started; LockCord closes for it.
+// Portable: the release page opens.
+function installUpdate(r) {
+  const go = () => {
+    updating = updateInfo.installed ? { done: 0, total: 0 } : null;
+    drawUpdate();
+    api.updateInstall().then((how) => {
+      if (how === 'opened') showToast('The release page opened in your browser.');
+    }).catch((e) => { updating = null; drawUpdate(); showToast(String(e)); });
+  };
+  if (!updateInfo.installed) { go(); return; }
+  setTimeout(() => confirmChoice('Update to ' + r.version + '?', 'LockCord downloads the installer from GitHub, checks it, then closes while it installs. A call you’re in is left.', 'Update', (yes) => { if (yes) go(); }), 0);
+}
+
+on('lc://update-progress', (p) => { updating = p; drawUpdate(); });
+
+function checkUpdates(force) {
+  return api.updateCheck(force).then((info) => { updateInfo = info; drawUpdate(); return info; });
+}
+
 function popupAt(anchor, node) {
   closeLayer();
   layer.appendChild(node);
@@ -1894,6 +1969,8 @@ function takeReady(r) {
   state.reads = new Map(Object.entries(r.reads || {}));
   state.e2e = r.e2e || { contacts: [], problem: null };
   calls.load(r.voice);
+  // Once per run: whether there's a newer LockCord (GitHub is asked at most once a day).
+  if (!updateInfo) checkUpdates(false).catch(() => {});
   if (state.e2e.problem) showToast(state.e2e.problem);
   else if (state.e2e.notice) showToast(state.e2e.notice);
   state.guilds = r.guilds || [];
@@ -2102,6 +2179,9 @@ function openSettings(start) {
     saveFolder: () => api.saveFolder(),
     pickSaveFolder: () => api.pickSaveFolder(),
     voiceDevices: () => api.voiceDevices(),
+    updateInfo: () => updateInfo,
+    checkUpdates: () => checkUpdates(true),
+    installUpdate: () => updateInfo && updateInfo.release && installUpdate(updateInfo.release),
     voiceTest: (on) => api.voiceTest(on),
     voiceTestLevel: () => api.voiceTestLevel(),
     translationDefaults: () => (prefs.settings.translate || {}).defaults || {},

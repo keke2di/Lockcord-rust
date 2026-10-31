@@ -37,12 +37,19 @@ talks to Discord's API and gateway itself.
   get ".download" added, and every file is marked as from the internet).
 - **Captchas**: when Discord asks for one (a first message to someone new, a friend request), it
   shows in a small window of its own and the message goes through once it's done.
+- **Autocomplete** in the composer: `@` for people, roles, @everyone and @here, `#` for channels,
+  `:` for emoji (and the server's own). In a server, people not seen yet are searched through
+  Discord's gateway as Discord's app does; in DMs nothing typed is sent for a search.
+- **Updates**: once a day LockCord asks GitHub whether a newer version is out, and offers it. An
+  installed LockCord downloads the installer, checks it against the checksum GitHub publishes, and
+  starts it once you agree; a portable copy opens the release page. Turn it off in Settings → App.
 
 Privacy: no analytics or crash reports go anywhere, images from Discord are fetched by LockCord
 itself, the login happens on Discord's own page in a separate window (LockCord never sees your
 password), and the session is kept in Windows Credential Manager, on this computer only (never
 roaming to other machines) and encrypted for your Windows account. Calls connect to Discord's
-voice servers directly, as Discord's own app does, so Discord sees your IP address in a call.
+voice servers directly, as Discord's own app does, so Discord sees your IP address in a call. The
+update check asks `api.github.com` (with no token or anything about you), and can be turned off.
 
 ### What encrypted DMs don't protect
 

@@ -22,6 +22,7 @@ mod rest;
 mod search;
 mod settings;
 mod translate;
+mod update;
 mod vault;
 
 use serde_json::{Value, json};
@@ -656,6 +657,24 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
                 emit(app, "lc://thread", v);
             }
             emit(app, "lc://guild", view);
+        }
+        "GUILD_EMOJIS_UPDATE" => {
+            let Some(g) = live.guilds.iter_mut().find(|g| data["guild_id"] == g.id.as_str()) else { return };
+            g.emojis = guilds::emojis_of(&data["emojis"]);
+            let me = live.me_id();
+            let view = live.guilds.iter().find(|g| data["guild_id"] == g.id.as_str()).map(|g| g.view(&me));
+            drop(guard);
+            if let Some(v) = view {
+                emit(app, "lc://guild", v);
+            }
+        }
+        // The answer to the composer's member search: only ours (its nonce), cut down for the window.
+        "GUILD_MEMBERS_CHUNK" => {
+            let Some(nonce) = data["nonce"].as_str().filter(|n| n.starts_with("lc-")) else { return };
+            let members: Vec<Value> = data["members"].as_array().into_iter().flatten().take(10)
+                .map(|m| json!({ "user": user_view(&m["user"]), "nick": m["nick"] })).collect();
+            drop(guard);
+            emit(app, "lc://members-chunk", json!({ "guild_id": data["guild_id"], "nonce": nonce, "members": members }));
         }
         "GUILD_MEMBER_LIST_UPDATE" => {
             // Only the open server's list is asked for.
@@ -1914,6 +1933,123 @@ fn voice_test_level(state: State<App>) -> Option<f32> {
     state.mic_test.lock().unwrap().as_ref().map(|a| a.preview_level_db())
 }
 
+// The composer's @mention search in a server (op 8). Nothing is asked for an encrypted DM or a
+// secret chat: those never reach a server, and the window doesn't call this there.
+#[tauri::command]
+fn member_search(state: State<App>, guild_id: String, query: String, nonce: String) -> Result<(), String> {
+    let query: String = query.chars().take(32).collect();
+    if query.is_empty() || query.chars().any(char::is_control) || !nonce.starts_with("lc-") || nonce.len() > 32 {
+        return Err("bad search".into());
+    }
+    let guard = state.live.lock().unwrap();
+    let live = guard.as_ref().ok_or("Not signed in.")?;
+    if !live.guilds.iter().any(|g| g.id == guild_id && !g.unavailable) {
+        return Err("Not a server you're in.".into());
+    }
+    let _ = live.outbound.try_send(guilds::member_search(&guild_id, &query, &nonce));
+    Ok(())
+}
+
+// --- Updates (update.rs) -----------------------------------------------------------------------------
+
+// update.json: when it last checked, the version the user put off, and the newer release it knows.
+fn update_state(app: &AppHandle, state: &App) -> Value {
+    store(app, state).map(|s| s.read_json("update.json")).unwrap_or(Value::Null)
+}
+
+fn known_release(saved: &Value) -> Option<update::Release> {
+    let k = &saved["known"];
+    let digest = k["digest"].as_str().and_then(|hex| {
+        let mut out = [0u8; 32];
+        (hex.len() == 64).then_some(())?;
+        for (i, b) in out.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        Some(out)
+    });
+    let r = update::Release {
+        version: k["version"].as_str()?.to_owned(),
+        notes: k["notes"].as_str().unwrap_or("").to_owned(),
+        page: k["page"].as_str()?.to_owned(),
+        asset: k["asset"].as_str().filter(|a| update::allowed_asset_url(a))?.to_owned(),
+        size: k["size"].as_u64().unwrap_or(0),
+        digest,
+    };
+    update::newer(env!("CARGO_PKG_VERSION"), &r.version).then_some(r)
+}
+
+fn release_json(r: &update::Release) -> Value {
+    json!({ "version": r.version, "notes": r.notes, "page": r.page, "asset": r.asset, "size": r.size,
+        "digest": r.digest.map(|d| d.iter().map(|b| format!("{b:02x}")).collect::<String>()) })
+}
+
+// Whether there's a newer LockCord: asked of GitHub when `force` (Check now), or on start when
+// the check is on and the last one is older than a day; otherwise what was found last time.
+#[tauri::command]
+async fn update_check(app: AppHandle, state: State<'_, App>, force: bool) -> Result<Value, String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let enabled = store(&app, &state)?.settings()["checkUpdates"] != false;
+    let mut saved = update_state(&app, &state);
+    let last = saved["lastCheck"].as_u64().unwrap_or(0);
+    let due = enabled && deletion::now_ms().saturating_sub(last) > update::CHECK_EVERY_MS;
+    let mut problem = None;
+    if force || due {
+        match update::check(&state.http, current).await {
+            Ok(found) => {
+                saved["lastCheck"] = json!(deletion::now_ms());
+                saved["known"] = found.as_ref().map(release_json).unwrap_or(Value::Null);
+                let _ = store(&app, &state)?.write_json("update.json", &saved);
+            }
+            Err(e) => problem = Some(e),
+        }
+    }
+    let release = known_release(&saved);
+    // Put off with "Later": not shown again on its own until a newer one (Check now still shows it).
+    let hidden = !force && release.as_ref().is_some_and(|r| saved["dismissed"] == r.version.as_str());
+    Ok(json!({
+        "current": current, "enabled": enabled, "lastCheck": saved["lastCheck"], "installed": update::installed(),
+        "release": release.filter(|_| !hidden).map(|r| r.view()), "problem": problem,
+    }))
+}
+
+#[tauri::command]
+fn update_dismiss(app: AppHandle, state: State<App>, version: String) -> Result<(), String> {
+    let mut saved = update_state(&app, &state);
+    saved["dismissed"] = json!(version.chars().take(32).collect::<String>());
+    store(&app, &state)?.write_json("update.json", &saved)
+}
+
+// Installing the newer release: an installed LockCord downloads its installer, checks it against
+// GitHub's checksum, starts it and closes; a portable copy opens the release page instead.
+#[tauri::command]
+async fn update_install(app: AppHandle, state: State<'_, App>) -> Result<String, String> {
+    let release = known_release(&update_state(&app, &state)).ok_or("There's no newer version to install.")?;
+    if !update::installed() || release.digest.is_none() {
+        app.opener().open_url(&release.page, None::<&str>).map_err(|e| e.to_string())?;
+        return Ok("opened".into());
+    }
+    let progress = app.clone();
+    let path = update::download(&release, env!("CARGO_PKG_VERSION"), move |done, total| {
+        emit(&progress, "lc://update-progress", json!({ "done": done, "total": total }));
+    }).await?;
+    let digest = release.digest.ok_or("no checksum")?;
+    if !update::still_matches(&path, &digest) {
+        let _ = std::fs::remove_file(&path);
+        return Err("The installer changed after it was downloaded, so it wasn't started.".into());
+    }
+    update::start_installer(&path)?;
+    // The installer replaces this exe: LockCord gets out of its way (a call is left first).
+    if let Some(live) = state.live.lock().unwrap().as_mut() {
+        call_leave_now(&app, &state, live);
+    }
+    let quit = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        quit.exit(0);
+    });
+    Ok("started".into())
+}
+
 // --- Translation (translate.rs) -----------------------------------------------------------------
 
 // A channel whose text may go to Google: a DM or a server channel this account can see. (Secret
@@ -3128,7 +3264,7 @@ fn main() {
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
         .register_uri_scheme_protocol(settings::SCHEME, serve_theme_asset)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, theme_get, theme_save, theme_delete, theme_asset_add, theme_asset_remove, theme_import, theme_export, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, theme_get, theme_save, theme_delete, theme_asset_add, theme_asset_remove, theme_import, theme_export, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);

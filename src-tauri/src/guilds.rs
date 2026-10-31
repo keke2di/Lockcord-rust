@@ -20,6 +20,7 @@ pub const SEND_MESSAGES: u64 = 1 << 11;
 pub const MANAGE_MESSAGES: u64 = 1 << 13;
 pub const ATTACH_FILES: u64 = 1 << 15;
 pub const READ_MESSAGE_HISTORY: u64 = 1 << 16;
+pub const MENTION_EVERYONE: u64 = 1 << 17;
 pub const CONNECT: u64 = 1 << 20;
 pub const SPEAK: u64 = 1 << 21;
 pub const MANAGE_THREADS: u64 = 1 << 34;
@@ -51,6 +52,23 @@ pub struct Guild {
     // Threads known here (active ones, and any fetched since), and the ones this account is in.
     pub threads: Vec<Value>,
     pub joined: HashSet<String>,
+    // The server's custom emoji, for the composer's :autocomplete (id, name, animated, available).
+    pub emojis: Vec<Value>,
+}
+
+const MAX_EMOJIS: usize = 500;
+
+/// A server's emoji list, cut down to what the composer needs.
+pub fn emojis_of(list: &Value) -> Vec<Value> {
+    list.as_array().into_iter().flatten().filter(|e| e["id"].is_string() && e["name"].is_string()).take(MAX_EMOJIS)
+        .map(|e| json!({ "id": e["id"], "name": e["name"], "animated": e["animated"].as_bool().unwrap_or(false), "available": e["available"].as_bool().unwrap_or(true) }))
+        .collect()
+}
+
+/// The gateway's member search (op 8, as Discord's app does for @mentions): up to ten members
+/// whose names start with `query`, answered in GUILD_MEMBERS_CHUNK with the same nonce.
+pub fn member_search(guild_id: &str, query: &str, nonce: &str) -> Value {
+    json!({ "op": 8, "d": { "guild_id": [guild_id], "query": query, "limit": 10, "presences": false, "nonce": nonce } })
 }
 
 // Newer READYs put a guild's own fields under `properties`.
@@ -73,7 +91,7 @@ impl Guild {
     pub fn parse(g: &Value, me: &str, own: Option<&Value>) -> Option<Guild> {
         let id = g["id"].as_str()?.to_owned();
         if g["unavailable"].as_bool() == Some(true) {
-            return Some(Guild { id, name: String::new(), icon: Value::Null, owner_id: String::new(), roles: Vec::new(), channels: Vec::new(), my_roles: Vec::new(), unavailable: true, threads: Vec::new(), joined: HashSet::new() });
+            return Some(Guild { id, name: String::new(), icon: Value::Null, owner_id: String::new(), roles: Vec::new(), channels: Vec::new(), my_roles: Vec::new(), unavailable: true, threads: Vec::new(), joined: HashSet::new(), emojis: Vec::new() });
         }
         let member = own.cloned().or_else(|| g["members"].as_array()?.iter().find(|m| m["user"]["id"] == me || m["user_id"] == me).cloned());
         let threads: Vec<Value> = g["threads"].as_array().map(|t| t.iter().filter(|t| is_thread(t)).take(MAX_THREADS).cloned().collect()).unwrap_or_default();
@@ -90,6 +108,7 @@ impl Guild {
             unavailable: false,
             threads,
             joined,
+            emojis: emojis_of(if g["emojis"].is_null() { &g["properties"]["emojis"] } else { &g["emojis"] }),
         })
     }
 
@@ -256,7 +275,7 @@ impl Guild {
             "topic": c["topic"], "last_message_id": c["last_message_id"], "nsfw": c["nsfw"],
             "can_send": has(SEND_MESSAGES), "can_history": has(READ_MESSAGE_HISTORY), "can_react": has(ADD_REACTIONS),
             "can_attach": has(ATTACH_FILES), "can_manage": has(MANAGE_MESSAGES), "can_pin": has(MANAGE_MESSAGES) || has(PIN_MESSAGES),
-            "can_connect": has(CONNECT), "can_speak": has(SPEAK), "can_stream": has(STREAM), "user_limit": c["user_limit"],
+            "can_mention_everyone": has(MENTION_EVERYONE), "can_connect": has(CONNECT), "can_speak": has(SPEAK), "can_stream": has(STREAM), "user_limit": c["user_limit"],
             "member_list": member_list_id(self.role_bits(&self.id), overwrites),
             "available_tags": c["available_tags"].as_array().map(|tags| tags.iter().take(20).map(|t| json!({ "id": t["id"], "name": t["name"], "emoji": t["emoji_name"] })).collect::<Vec<_>>()),
         }))
@@ -268,12 +287,12 @@ impl Guild {
         if self.unavailable {
             return json!({ "id": self.id, "unavailable": true });
         }
-        let roles: Vec<Value> = self.roles.iter().map(|r| json!({ "id": r["id"], "name": r["name"], "color": r["color"], "position": r["position"] })).collect();
+        let roles: Vec<Value> = self.roles.iter().map(|r| json!({ "id": r["id"], "name": r["name"], "color": r["color"], "position": r["position"], "mentionable": r["mentionable"].as_bool().unwrap_or(false) })).collect();
         let channels: Vec<Value> = self.channels.iter().filter_map(|c| self.channel_view(me, c)).collect();
         let threads: Vec<Value> = self.threads.iter()
             .filter(|t| self.joined.contains(t["id"].as_str().unwrap_or("")) && t["thread_metadata"]["archived"].as_bool() != Some(true))
             .filter_map(|t| self.thread_view(me, t)).collect();
-        json!({ "id": self.id, "name": self.name, "icon": self.icon, "owner_id": self.owner_id, "roles": roles, "my_roles": self.my_roles, "channels": channels, "threads": threads })
+        json!({ "id": self.id, "name": self.name, "icon": self.icon, "owner_id": self.owner_id, "roles": roles, "my_roles": self.my_roles, "channels": channels, "threads": threads, "emojis": self.emojis })
     }
 
     /// Whether a message here mentions this account: by name, by one of its roles, or @everyone.
@@ -417,6 +436,20 @@ mod tests {
             "members": [{ "user": { "id": "5" }, "roles": [] }],
         });
         Guild::parse(&g, "5", None).unwrap()
+    }
+
+    #[test]
+    fn emojis_and_the_member_search_frame() {
+        let list = json!([{ "id": "1", "name": "blob", "animated": true }, { "name": "no id" }, { "id": "2", "name": "cat", "available": false }]);
+        let e = emojis_of(&list);
+        assert_eq!(e.len(), 2);
+        assert_eq!(e[0]["animated"], true);
+        assert_eq!(e[1]["available"], false);
+        let f = member_search("9", "wr", "lc-1");
+        assert_eq!(f["op"], 8);
+        assert_eq!(f["d"]["guild_id"][0], "9");
+        assert_eq!(f["d"]["limit"], 10);
+        assert_eq!(f["d"]["nonce"], "lc-1");
     }
 
     #[test]

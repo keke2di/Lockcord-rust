@@ -81,6 +81,10 @@
     "allow-call-frame",
     "allow-voice-devices",
     "allow-voice-test",
-    "allow-voice-test-level"
+    "allow-voice-test-level",
+    "allow-update-check",
+    "allow-update-dismiss",
+    "allow-update-install",
+    "allow-member-search"
   ]
 }

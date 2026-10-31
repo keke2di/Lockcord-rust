@@ -10,7 +10,7 @@ const COMMANDS: &[&str] = &[
     "group_leave", "pins", "pin", "threads", "thread_join", "forum_posts", "poll_vote", "search", "thread_open", "e2e_accept_offer",
     "e2e_ignore_offer", "call_join", "call_leave", "call_decline", "call_peek", "call_controls", "call_ptt", "call_camera", "call_volume",
     "call_share_sources", "call_share", "call_share_stop", "call_watch", "call_watch_stop", "call_frame", "voice_devices", "voice_test",
-    "voice_test_level",
+    "voice_test_level", "update_check", "update_dismiss", "update_install", "member_search",
 ];
 
 fn main() {

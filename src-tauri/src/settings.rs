@@ -261,6 +261,8 @@ pub fn clean_settings(raw: &Value) -> Value {
         "closeToTray": raw["closeToTray"].as_bool().unwrap_or(true),
         "autostart": raw["autostart"].as_bool().unwrap_or(false),
         "startHidden": raw["startHidden"].as_bool().unwrap_or(false),
+        // The daily update check (update.rs): on unless turned off.
+        "checkUpdates": raw["checkUpdates"].as_bool().unwrap_or(true),
         // Notifications: "off", "name" (who, not what) or "text" (the message too).
         "notify": raw["notify"].as_str().filter(|n| ["off", "name", "text"].contains(n)).unwrap_or("name"),
         "voice": clean_voice(&raw["voice"]),
