@@ -105,7 +105,7 @@ svg.lc-icon:not([width="12"]):not([width="14"]) path { fill: none; stroke: curre
 .friends-tab { border-radius: 0; background: none; }
 .friends-tab.selected { background: none; box-shadow: inset 0 -1px 0 var(--lc-header); color: var(--lc-header); }
 .friend { border-radius: 0; }
-.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 1px solid var(--lc-header); border-radius: 0; box-shadow: none; }
+.emoji-picker, .profile-popout { --lc-picker-bg: var(--lc-chat-bg); background: var(--lc-chat-bg); border: 1px solid var(--lc-header); border-radius: 0; box-shadow: none; }
 .emoji-cell:hover { background: none; outline: 1px solid var(--lc-hairline); border-radius: 0; }
 
 /* The top bar: plain icons, text buttons as underlined words, an underlined search. */

@@ -14,14 +14,15 @@ use std::sync::Arc;
 use url::Url;
 
 pub const SCHEME: &str = "lcmedia";
-// Discord's CDN, its media proxy, and its older external-media proxies (embeds' images and GIFs).
-const HOSTS: [&str; 4] = ["cdn.discordapp.com", "media.discordapp.net", "images-ext-1.discordapp.net", "images-ext-2.discordapp.net"];
+// Discord's CDN, its media proxy, its older external-media proxies (embeds' images and GIFs), and
+// Tenor's media host, for the GIF picker's previews (gifs.rs), as Discord's own picker loads them.
+const HOSTS: [&str; 5] = ["cdn.discordapp.com", "media.discordapp.net", "images-ext-1.discordapp.net", "images-ext-2.discordapp.net", "media.tenor.com"];
 const UPLOAD_HOST: &str = "discord-attachments-uploads-prd.storage.googleapis.com";
 const TYPES: [&str; 6] = ["image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm"];
 const MAX_BYTES: usize = 25 * 1024 * 1024;
 const CACHE_BYTES: usize = 96 * 1024 * 1024;
 
-/// A link the media scheme will fetch: https on one of Discord's media hosts, nothing else.
+/// A link the media scheme will fetch: https on one of Discord's media hosts (or Tenor's), nothing else.
 pub fn allowed(raw: &str) -> Option<Url> {
     let url = Url::parse(raw).ok()?;
     let host = url.host_str()?;
@@ -157,6 +158,8 @@ mod tests {
         assert!(allowed("https://cdn.discordapp.com/emojis/123.webp?size=48").is_some());
         assert!(allowed("https://media.discordapp.net/external/abc/https/example.com/a.png").is_some());
         assert!(allowed("https://images-ext-1.discordapp.net/external/abc/https/media.tenor.com/x.mp4").is_some());
+        assert!(allowed("https://media.tenor.com/abc/AAAPo/x.mp4").is_some());
+        assert!(allowed("https://tenor.com/view/x").is_none() && allowed("https://media.tenor.com.evil.example/x.mp4").is_none());
         for bad in [
             "http://cdn.discordapp.com/a.png",
             "https://example.com/a.png",

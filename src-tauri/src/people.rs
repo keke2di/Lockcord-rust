@@ -35,9 +35,30 @@ pub fn profile_view(body: &Value) -> Value {
         "bio": text(&body["guild_member_profile"]["bio"]).or_else(|| text(&p["bio"])),
         "member": if member.is_object() { json!({ "nick": member["nick"], "roles": member["roles"], "joined_at": member["joined_at"] }) } else { Value::Null },
         "mutual_guilds": mutual,
-        "mutual_friends": body["mutual_friends_count"].as_u64(),
+        "mutual_friends": body["mutual_friends_count"].as_u64().or_else(|| body["mutual_friends"].as_array().map(|f| f.len() as u64)),
+        "mutual_friends_list": body["mutual_friends"].as_array().into_iter().flatten().take(100).filter_map(|f| {
+            let u = if f["user"].is_object() { &f["user"] } else { f };
+            Some(json!({ "id": u["id"].as_str()?, "username": u["username"], "global_name": u["global_name"], "avatar": u["avatar"], "discriminator": u["discriminator"] }))
+        }).collect::<Vec<_>>(),
         "premium_since": body["premium_since"],
     })
+}
+
+/// A presence's custom status (its type 4 activity), cut down for the window: { text, emoji }
+/// (emoji: { name, id, animated }), or null when there's none.
+pub fn custom_status(presence: &Value) -> Value {
+    let Some(a) = presence["activities"].as_array().into_iter().flatten().find(|a| a["type"] == 4) else { return Value::Null };
+    let text: String = a["state"].as_str().unwrap_or("").chars().take(128).collect();
+    let e = &a["emoji"];
+    let emoji = if e["name"].is_string() {
+        json!({ "name": e["name"], "id": e["id"].as_str().filter(|id| id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit())), "animated": e["animated"].as_bool().unwrap_or(false) })
+    } else {
+        Value::Null
+    };
+    if text.is_empty() && emoji.is_null() {
+        return Value::Null;
+    }
+    json!({ "text": text, "emoji": emoji })
 }
 
 /// This account's status: { status }.
@@ -107,7 +128,7 @@ fn write_len(out: &mut Vec<u8>, field: u32, value: &[u8]) {
     out.extend_from_slice(value);
 }
 
-fn read_varint(b: &[u8], at: &mut usize) -> Option<u64> {
+pub(crate) fn read_varint(b: &[u8], at: &mut usize) -> Option<u64> {
     let mut v = 0u64;
     for shift in (0..64).step_by(7) {
         let byte = *b.get(*at)?;
@@ -121,7 +142,7 @@ fn read_varint(b: &[u8], at: &mut usize) -> Option<u64> {
 }
 
 // One field at `at`: (number, wire type, value range, end).
-fn field_at(b: &[u8], at: usize) -> Option<(u32, u8, std::ops::Range<usize>, usize)> {
+pub(crate) fn field_at(b: &[u8], at: usize) -> Option<(u32, u8, std::ops::Range<usize>, usize)> {
     let mut c = at;
     let key = read_varint(b, &mut c)?;
     let (number, wire) = (u32::try_from(key >> 3).ok()?, (key & 7) as u8);
@@ -143,7 +164,7 @@ fn field_at(b: &[u8], at: usize) -> Option<(u32, u8, std::ops::Range<usize>, usi
     (end <= b.len()).then_some((number, wire, start..end, end))
 }
 
-fn fields(b: &[u8]) -> impl Iterator<Item = (u32, u8, std::ops::Range<usize>, usize)> + '_ {
+pub(crate) fn fields(b: &[u8]) -> impl Iterator<Item = (u32, u8, std::ops::Range<usize>, usize)> + '_ {
     let mut at = 0;
     std::iter::from_fn(move || {
         if at >= b.len() {
@@ -155,11 +176,11 @@ fn fields(b: &[u8]) -> impl Iterator<Item = (u32, u8, std::ops::Range<usize>, us
     })
 }
 
-fn len_field(b: &[u8], field: u32) -> Option<&[u8]> {
+pub(crate) fn len_field(b: &[u8], field: u32) -> Option<&[u8]> {
     fields(b).filter(|f| f.0 == field && f.1 == 2).last().map(|f| &b[f.2])
 }
 
-fn varint_field(b: &[u8], field: u32) -> Option<u64> {
+pub(crate) fn varint_field(b: &[u8], field: u32) -> Option<u64> {
     fields(b).filter(|f| f.0 == field && f.1 == 0).last().and_then(|f| read_varint(b, &mut f.2.start.clone()))
 }
 
@@ -234,6 +255,7 @@ mod tests {
             "guild_member": { "nick": "Fiver", "roles": ["9"], "joined_at": "2024-01-01T00:00:00+00:00" },
             "mutual_guilds": [{ "id": "7", "nick": null }],
             "mutual_friends_count": 3,
+            "mutual_friends": [{ "id": "8", "username": "eight", "global_name": null, "avatar": null, "email": "no" }],
         });
         let v = profile_view(&body);
         assert_eq!(v["user"]["username"], "five");
@@ -242,5 +264,17 @@ mod tests {
         assert_eq!(v["member"]["nick"], "Fiver");
         assert_eq!(v["mutual_guilds"][0]["id"], "7");
         assert_eq!(v["mutual_friends"], 3);
+        assert_eq!(v["mutual_friends_list"][0]["username"], "eight");
+        assert!(v["mutual_friends_list"][0].get("email").is_none());
+    }
+
+    #[test]
+    fn custom_status_is_cut_down() {
+        let p = json!({ "activities": [{ "type": 0, "name": "A game" }, { "type": 4, "state": "out for lunch", "emoji": { "name": "pizza", "id": "123", "animated": true } }] });
+        assert_eq!(custom_status(&p), json!({ "text": "out for lunch", "emoji": { "name": "pizza", "id": "123", "animated": true } }));
+        let bad = json!({ "activities": [{ "type": 4, "emoji": { "name": "x", "id": "../1" } }] });
+        assert_eq!(custom_status(&bad)["emoji"]["id"], Value::Null);
+        assert!(custom_status(&json!({ "activities": [{ "type": 4 }] })).is_null());
+        assert!(custom_status(&json!({})).is_null());
     }
 }

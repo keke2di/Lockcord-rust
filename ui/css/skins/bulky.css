@@ -173,7 +173,7 @@ svg.lc-icon { shape-rendering: crispEdges; }
 .friends-tab { border: 2px solid var(--lc-ink); border-radius: 8px; font-family: var(--lc-font-pixel); color: var(--lc-ink); }
 .friends-tab.selected { background: var(--lc-brand); box-shadow: 2px 2px 0 var(--lc-ink); }
 .friend { border-radius: 8px; }
-.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); color: var(--lc-ink); }
+.emoji-picker, .profile-popout { --lc-picker-bg: var(--lc-chat-bg); background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); color: var(--lc-ink); }
 .emoji-cell:hover { background: var(--lc-brand); border-radius: 6px; box-shadow: inset 0 0 0 2px var(--lc-ink); }
 
 /* The user panel: room for the name inside the thick frame. */

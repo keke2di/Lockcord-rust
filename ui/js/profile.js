@@ -28,9 +28,19 @@ function bannerUrl(userId, hash) {
 const hex = (n) => '#' + Number(n).toString(16).padStart(6, '0');
 const longDate = (ms) => new Date(ms).toLocaleDateString([], { dateStyle: 'medium' });
 
-// The popout's body. p: the profile (or null while it loads); u: the user as already known.
-// ctx: { me, status (theirs), relationship (type or null), guild (server roles, or null), md,
-//        guildName(id), message(), add(), accept(), remove(), block(), unblock(), editStatus() }
+// A custom status's emoji: Discord's image for a custom one, the character otherwise.
+function customEmoji(emoji, emojiUrl) {
+  if (!emoji || !emoji.name) return null;
+  if (emoji.id && emojiUrl) return h('img', { class: 'status-bubble-emoji', src: emojiUrl(emoji.id, emoji.animated), alt: ':' + emoji.name + ':', draggable: false });
+  return h('span', { class: 'status-bubble-emoji' }, emoji.name);
+}
+
+// The full profile, over the whole window as Discord's is. p: the profile (or null while it
+// loads); u: the user as already known.
+// ctx: { me, status (theirs), custom ({ text, emoji } or null), relationship (type or null),
+//        guild (the open server, for roles, or null), md, emojiUrl, known(id) (a server this
+//        account is in), guildIcon(guild), openGuild(id), openUser(user), close(),
+//        message(), add(), accept(), remove(), block(), unblock(), editStatus() }
 export function profileCard(u, p, ctx) {
   const user = p ? Object.assign({}, u, p.user) : u;
   const self = ctx.me && user.id === ctx.me.id;
@@ -38,8 +48,16 @@ export function profileCard(u, p, ctx) {
   const top = h('div', { class: 'profile-banner' + (banner ? ' image' : '') });
   if (banner) top.appendChild(h('img', { src: banner, alt: '', draggable: false }));
   else if (p && p.accent != null) top.style.background = hex(p.accent);
-  const card = h('div', { class: 'profile-card' }, top,
+  const head = h('div', { class: 'profile-head' },
     h('div', { class: 'profile-avatar' }, avatarWithStatus(user, ctx.status, 'profile-avatar-img')));
+  if (ctx.custom && (ctx.custom.text || ctx.custom.emoji)) {
+    head.appendChild(h('div', { class: 'status-bubble', title: ctx.custom.text || '' },
+      customEmoji(ctx.custom.emoji, ctx.emojiUrl), ctx.custom.text ? h('span', { class: 'status-bubble-text' }, ctx.custom.text) : null));
+  }
+  if (p) head.appendChild(actions(user, self, ctx));
+  const card = h('div', { class: 'profile-card' }, top,
+    h('button', { type: 'button', class: 'profile-close', 'aria-label': 'Close', title: 'Close', onclick: (e) => { e.stopPropagation(); ctx.close(); } }, icon(ICONS.close, 20)),
+    head);
 
   const nick = p && p.member && p.member.nick;
   const body = h('div', { class: 'profile-body' },
@@ -52,7 +70,48 @@ export function profileCard(u, p, ctx) {
     body.appendChild(h('div', { class: 'profile-loading' }, h('span', { class: 'spinner' }), ' Loading profile…'));
     return card;
   }
-  const section = (title, ...children) => body.appendChild(h('div', { class: 'profile-section' }, h('div', { class: 'profile-heading' }, title), ...children));
+
+  // The tabs: About Me, and (for someone else) the servers and friends in common.
+  const servers = self ? [] : (p.mutual_guilds || []).map((g) => ctx.known(g.id)).filter(Boolean);
+  const friends = self ? [] : (p.mutual_friends_list || []);
+  const friendCount = self ? 0 : Math.max(friends.length, p.mutual_friends || 0);
+  const tabs = [['about', 'About Me']];
+  if (!self) tabs.push(['servers', servers.length + ' Mutual Server' + (servers.length === 1 ? '' : 's')], ['friends', friendCount + ' Mutual Friend' + (friendCount === 1 ? '' : 's')]);
+  const panel = h('div', { class: 'profile-tab-panel', role: 'tabpanel' });
+  const bar = h('div', { class: 'profile-tabs', role: 'tablist' });
+  const show = (key) => {
+    for (const b of bar.children) b.setAttribute('aria-selected', b.dataset.key === key ? 'true' : 'false');
+    panel.textContent = '';
+    if (key === 'about') {
+      about(panel, user, p, ctx);
+    } else if (key === 'servers') {
+      if (!servers.length) panel.appendChild(h('div', { class: 'profile-empty' }, 'No servers in common.'));
+      for (const g of servers) {
+        const nickThere = ((p.mutual_guilds || []).find((x) => x.id === g.id) || {}).nick;
+        panel.appendChild(h('button', { type: 'button', class: 'profile-row', onclick: (e) => { e.stopPropagation(); ctx.openGuild(g.id); } },
+          ctx.guildIcon(g), h('span', { class: 'profile-row-name' }, h('span', null, g.name), nickThere ? h('span', { class: 'profile-row-sub' }, nickThere) : null)));
+      }
+    } else {
+      if (!friends.length) panel.appendChild(h('div', { class: 'profile-empty' }, friendCount ? friendCount + ' friends in common, but Discord didn’t list them.' : 'No friends in common.'));
+      for (const f of friends) {
+        panel.appendChild(h('button', { type: 'button', class: 'profile-row', onclick: (e) => { e.stopPropagation(); ctx.openUser(f); } },
+          avatarWithStatus(f, null, 'member-avatar'), h('span', { class: 'profile-row-name' }, h('span', null, displayName(f)), h('span', { class: 'profile-row-sub' }, f.username || ''))));
+      }
+    }
+  };
+  for (const [key, label] of tabs) {
+    const tab = h('button', { type: 'button', role: 'tab', class: 'profile-tab', onclick: (e) => { e.stopPropagation(); show(key); } }, label);
+    tab.dataset.key = key;
+    bar.appendChild(tab);
+  }
+  if (tabs.length > 1) card.appendChild(bar);
+  card.appendChild(panel);
+  show('about');
+  return card;
+}
+
+function about(panel, user, p, ctx) {
+  const section = (title, ...children) => panel.appendChild(h('div', { class: 'profile-section' }, h('div', { class: 'profile-heading' }, title), ...children));
   if (p.bio) section('About Me', h('div', { class: 'profile-bio' }, render(parse(p.bio), document, ctx.md)));
   const since = [h('div', { class: 'profile-since' }, icon(ICONS.chat, 14), ' Discord: ' + longDate(snowflakeTime(user.id)))];
   if (p.member && p.member.joined_at && ctx.guild) since.push(h('div', { class: 'profile-since' }, icon(ICONS.members, 14), ' ' + ctx.guild.name + ': ' + longDate(Date.parse(p.member.joined_at))));
@@ -64,31 +123,24 @@ export function profileCard(u, p, ctx) {
         h('span', { class: 'profile-role-dot', style: 'background:' + (r.color ? hex(r.color) : 'var(--lc-status-offline)') }), r.name))));
     }
   }
-  if (!self) {
-    const mutual = (p.mutual_guilds || []).map((g) => ctx.guildName(g.id)).filter(Boolean);
-    const lines = [];
-    if (mutual.length) lines.push(h('div', { class: 'profile-mutual', title: mutual.join(', ') }, mutual.length + ' mutual server' + (mutual.length === 1 ? '' : 's') + ': ' + mutual.slice(0, 4).join(', ') + (mutual.length > 4 ? '…' : '')));
-    if (p.mutual_friends) lines.push(h('div', { class: 'profile-mutual' }, p.mutual_friends + ' mutual friend' + (p.mutual_friends === 1 ? '' : 's')));
-    if (lines.length) section('In Common', ...lines);
-  }
-  body.appendChild(actions(user, self, ctx));
-  return card;
 }
 
+// Small buttons beside the avatar, as Discord's full profile has them.
 function actions(user, self, ctx) {
   const row = h('div', { class: 'profile-actions' });
-  const button = (label, fn, cls) => h('button', { type: 'button', class: 'button small ' + (cls || 'secondary'), onclick: (e) => { e.stopPropagation(); fn(); } }, label);
+  const button = (label, path, fn, cls) => h('button', { type: 'button', class: 'button tiny ' + (cls || 'secondary'), title: label, onclick: (e) => { e.stopPropagation(); fn(); } },
+    path ? icon(path, 14) : null, h('span', null, label));
   if (self) {
-    row.appendChild(button('Set status', ctx.editStatus, 'brand'));
+    row.appendChild(button('Set status', null, ctx.editStatus, 'brand'));
     return row;
   }
   const rel = ctx.relationship;
-  if (rel !== BLOCKED && !user.bot) row.appendChild(button('Message', ctx.message, 'brand'));
-  if (rel === FRIEND) row.appendChild(button('Remove Friend', ctx.remove, 'danger-outline'));
-  else if (rel === INCOMING) row.appendChild(button('Accept Request', ctx.accept, 'positive'));
-  else if (rel === OUTGOING) row.appendChild(button('Request Sent', ctx.remove));
-  else if (rel !== BLOCKED && !user.bot) row.appendChild(button('Add Friend', ctx.add, 'positive'));
-  row.appendChild(rel === BLOCKED ? button('Unblock', ctx.unblock) : button('Block', ctx.block, 'danger-outline'));
+  if (rel !== BLOCKED && !user.bot) row.appendChild(button('Message', ICONS.chat, ctx.message, 'brand'));
+  if (rel === FRIEND) row.appendChild(button('Remove Friend', null, ctx.remove, 'danger-outline'));
+  else if (rel === INCOMING) row.appendChild(button('Accept Request', ICONS.check, ctx.accept, 'positive'));
+  else if (rel === OUTGOING) row.appendChild(button('Request Sent', null, ctx.remove));
+  else if (rel !== BLOCKED && !user.bot) row.appendChild(button('Add Friend', ICONS.add, ctx.add, 'positive'));
+  row.appendChild(rel === BLOCKED ? button('Unblock', null, ctx.unblock) : button('Block', null, ctx.block, 'danger-outline'));
   return row;
 }
 

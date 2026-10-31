@@ -122,7 +122,7 @@ svg.lc-icon path { stroke: currentColor; stroke-width: 0.6; stroke-linejoin: rou
 .friends-tab { border-radius: 999px; }
 .friends-tab.selected { background: linear-gradient(135deg, var(--lc-brand), color-mix(in srgb, var(--lc-brand) 75%, #ff8a65)); color: var(--lc-on-accent); }
 .friend { border-radius: 16px; }
-.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 0; border-radius: 24px; box-shadow: 0 24px 50px -20px color-mix(in srgb, var(--lc-brand) 45%, rgba(0, 0, 0, 0.35)); }
+.emoji-picker, .profile-popout { --lc-picker-bg: var(--lc-chat-bg); background: var(--lc-chat-bg); border: 0; border-radius: 24px; box-shadow: 0 24px 50px -20px color-mix(in srgb, var(--lc-brand) 45%, rgba(0, 0, 0, 0.35)); }
 .emoji-cell:hover { background: color-mix(in srgb, var(--lc-brand) 12%, var(--lc-chat-bg)); border-radius: 12px; transform: scale(1.15); }
 
 /* The top bar: round white icon buttons, pill text buttons and search, all floating. */

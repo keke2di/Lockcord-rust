@@ -10,7 +10,6 @@ import { avatarWithStatus, displayName, remember } from './people.js';
 export const TEXT_TYPES = new Set([0, 5]);
 const FORUMS = new Set([15, 16]);
 const VOICE_TYPES = new Set([2, 13]);
-const MAX_LIST = 200;
 
 // A role's colour as CSS, or null for none.
 function roleColor(role) {
@@ -128,52 +127,133 @@ export function renderChannels(list, ctx) {
 
 // --- The member list ------------------------------------------------------------------------------
 
-// A list as GUILD_MEMBER_LIST_UPDATE keeps it: { id, items, groups, count }. Only the first
-// rows are asked for (guilds.rs `subscription`), so it stays small.
+// The furthest row asked for (guilds.rs `member_ranges` stops below 10 000).
+const MAX_ROWS = 10000;
+
+// A list as GUILD_MEMBER_LIST_UPDATE keeps it: { id, items, groups, count, total }. items is
+// sparse and kept by index: Discord only sends the windows subscribed to (servers' op 37), and
+// INVALIDATE empties a window that's no longer watched, so rows never shift to fill a gap.
 export function applyMemberList(list, update) {
-  const next = list && list.id === update.id ? list : { id: update.id, items: [], groups: [], count: 0 };
+  const next = list && list.id === update.id ? list : { id: update.id, items: [], groups: [], count: 0, total: 0 };
   if (update.groups) next.groups = update.groups;
   if (typeof update.member_count === 'number') next.count = update.member_count;
+  const items = next.items;
+  const ok = (i) => Number.isInteger(i) && i >= 0 && i < MAX_ROWS;
   for (const op of update.ops || []) {
     if (op.op === 'SYNC' && Array.isArray(op.range) && Array.isArray(op.items)) {
       const [start, end] = op.range;
-      if (start < 0 || end < start || start > MAX_LIST) continue;
-      next.items.splice(start, Math.min(end, MAX_LIST) - start + 1, ...op.items.slice(0, MAX_LIST - start));
-    } else if (op.op === 'INSERT' && op.index <= MAX_LIST) {
-      next.items.splice(op.index, 0, op.item);
-    } else if (op.op === 'UPDATE' && op.index < next.items.length) {
-      next.items[op.index] = op.item;
-    } else if (op.op === 'DELETE' && op.index < next.items.length) {
-      next.items.splice(op.index, 1);
+      if (!ok(start) || !(end >= start)) continue;
+      for (let i = start; i <= end && i < MAX_ROWS; i++) items[i] = op.items[i - start];
+    } else if (op.op === 'INSERT' && ok(op.index)) {
+      if (op.index > items.length) items[op.index] = op.item; else items.splice(op.index, 0, op.item);
+    } else if (op.op === 'UPDATE' && ok(op.index)) {
+      items[op.index] = op.item;
+    } else if (op.op === 'DELETE' && ok(op.index) && op.index < items.length) {
+      items.splice(op.index, 1);
     } else if (op.op === 'INVALIDATE' && Array.isArray(op.range)) {
-      next.items.splice(op.range[0], op.range[1] - op.range[0] + 1);
+      for (let i = Math.max(0, op.range[0]); i <= op.range[1] && i < items.length; i++) items[i] = undefined;
     }
   }
-  next.items = next.items.filter(Boolean).slice(0, MAX_LIST);
+  // The whole list's length, from its groups (a header row each, then its members).
+  const total = next.groups.reduce((n, g) => n + (g.count ? g.count + 1 : 0), 0);
+  next.total = Math.min(MAX_ROWS, total || items.length);
+  if (items.length > next.total) items.length = next.total;
   return next;
 }
 
-// open(user, anchor): a member's profile, on a click.
+// The members a list update carries, for their status and custom status elsewhere (profiles).
+export function membersIn(update) {
+  const out = [];
+  for (const op of update.ops || []) {
+    for (const it of op.items || (op.item ? [op.item] : [])) if (it && it.member && it.member.user) out.push(it.member);
+  }
+  return out;
+}
+
+// A presence's custom status (activity type 4): { text, emoji } or null.
+export function customStatus(presence) {
+  const a = presence && (presence.activities || []).find((x) => x && x.type === 4);
+  if (!a || (!a.state && !a.emoji)) return null;
+  return { text: a.state || '', emoji: a.emoji || null };
+}
+
+// open(user, anchor): a member's profile, on a click. Rows not loaded (outside the windows
+// subscribed to) are drawn as placeholders of a row's height, so the scroll bar is the whole list.
 export function renderMembers(panel, guild, list, open) {
+  const top = panel.scrollTop;
   panel.textContent = '';
-  if (!list || !list.items.length) {
+  if (!list || !list.total) {
     panel.appendChild(h('div', { class: 'members-loading' }, list ? 'No one to show.' : 'Loading members…'));
     return;
   }
-  for (const item of list.items) {
+  let gap = 0;
+  const flush = (at) => {
+    if (!gap) return;
+    const spacer = h('div', { class: 'members-gap' });
+    spacer.style.height = 'calc(' + gap + ' * var(--lc-member-row, 44px))';
+    spacer.dataset.from = String(at - gap);
+    spacer.dataset.n = String(gap);
+    panel.appendChild(spacer);
+    gap = 0;
+  };
+  for (let i = 0; i < list.total; i++) {
+    const item = list.items[i];
+    if (!item || (!item.group && !(item.member && item.member.user))) { gap++; continue; }
+    flush(i);
+    let node;
     if (item.group) {
       const role = roleOf(guild, item.group.id);
       const label = item.group.id === 'online' ? 'Online' : item.group.id === 'offline' ? 'Offline' : role ? role.name : '';
-      panel.appendChild(h('div', { class: 'members-group' }, label + ' — ' + (item.group.count || 0)));
-    } else if (item.member && item.member.user) {
+      node = h('div', { class: 'members-group' }, label + ' — ' + (item.group.count || 0));
+    } else {
       const m = item.member;
       remember(m.user);
       const status = (m.presence && m.presence.status) || 'offline';
+      const custom = customStatus(m.presence);
       const name = h('span', { class: 'member-name' }, m.nick || displayName(m.user));
       const color = colorFor(guild, m.roles);
       if (color) name.style.color = color;
-      panel.appendChild(h('button', { type: 'button', class: 'member clickable' + (status === 'offline' ? ' offline' : ''), onclick: (e) => { e.stopPropagation(); if (open) open(m.user, e.currentTarget); } },
-        avatarWithStatus(m.user, status, 'member-avatar'), name));
+      node = h('button', { type: 'button', class: 'member clickable' + (status === 'offline' ? ' offline' : ''), onclick: (e) => { e.stopPropagation(); if (open) open(m.user, e.currentTarget); } },
+        avatarWithStatus(m.user, status, 'member-avatar'),
+        h('span', { class: 'member-text' }, name, custom && custom.text ? h('span', { class: 'member-custom', title: custom.text }, custom.text) : null));
     }
+    node.dataset.from = String(i);
+    node.dataset.n = '1';
+    panel.appendChild(node);
   }
+  flush(list.total);
+  panel.scrollTop = top;
+}
+
+// The rows in view [first, last], from what renderMembers drew (rows and gaps carry their index).
+export function rowsInView(panel) {
+  const from = panel.scrollTop;
+  const to = from + panel.clientHeight;
+  let first = null;
+  let last = 0;
+  for (const el of panel.children) {
+    if (!el.dataset.from) continue;
+    const top = el.offsetTop;
+    const height = el.offsetHeight || 1;
+    if (top + height < from) continue;
+    if (top > to) break;
+    const n = Number(el.dataset.n) || 1;
+    const per = height / n;
+    const a = Number(el.dataset.from) + Math.max(0, Math.floor((from - top) / per));
+    const b = Number(el.dataset.from) + Math.min(n - 1, Math.floor((to - top) / per));
+    if (first === null) first = a;
+    last = Math.max(last, b);
+  }
+  return first === null ? null : [first, last];
+}
+
+// The 100-row windows to subscribe to for the rows in view (with [0, 99], as the web client does).
+export function rangesFor(view) {
+  const out = [[0, 99]];
+  if (!view) return out;
+  for (const row of [view[0], view[1]]) {
+    const at = Math.floor(Math.min(row, MAX_ROWS - 1) / 100) * 100;
+    if (!out.some((r) => r[0] === at)) out.push([at, at + 99]);
+  }
+  return out.slice(0, 3);
 }

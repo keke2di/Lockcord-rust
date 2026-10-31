@@ -178,7 +178,7 @@ svg.lc-icon { filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.28)); }
 .friends-tab { border: 1px solid #919b9c; border-bottom: 0; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); color: var(--lc-text); }
 .friends-tab.selected { background: var(--lc-chat-bg); border-top: 2px solid #f8b636; }
 .friend { border-radius: 0; }
-.emoji-picker, .profile-popout { background: var(--lc-chat-bg); border: 1px solid var(--lc-xp-frame); border-radius: 0; color: var(--lc-text); }
+.emoji-picker, .profile-popout { --lc-picker-bg: var(--lc-chat-bg); background: var(--lc-chat-bg); border: 1px solid var(--lc-xp-frame); border-radius: 0; color: var(--lc-text); }
 .profile-banner { background: linear-gradient(180deg, var(--lc-xp-title-b), var(--lc-xp-title-a) 15%, var(--lc-xp-title-c)) !important; }
 .emoji-cell:hover { background: var(--lc-xp-select); border-radius: 0; }
 

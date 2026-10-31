@@ -352,13 +352,26 @@ pub fn merged_own(data: &Value, me: &str) -> HashMap<String, Value> {
         .collect()
 }
 
-/// The op 37 the web client sends when a channel is opened: typing and activity for the server,
-/// and the first 100 of the channel's member list.
-pub fn subscription(guild_id: &str, channel_id: &str) -> Value {
+/// The op 37 the web client sends when a channel is opened, and again as its member list is
+/// scrolled: typing and activity for the server, and the windows of the member list in view.
+pub fn subscription(guild_id: &str, channel_id: &str, ranges: &[[u32; 2]]) -> Value {
     json!({ "op": 37, "d": { "subscriptions": { guild_id: {
         "typing": true, "threads": true, "activities": true, "member_updates": false, "members": [],
-        "channels": { channel_id: [[0, 99]] }, "thread_member_lists": [],
+        "channels": { channel_id: ranges }, "thread_member_lists": [],
     } } } })
+}
+
+/// The member-list windows asked for, as the web client asks: always the first 100 rows, then at
+/// most two more 100-row windows (aligned, below row 10 000); anything else is dropped.
+pub fn member_ranges(asked: &[[u32; 2]]) -> Vec<[u32; 2]> {
+    let mut out = vec![[0, 99]];
+    for r in asked {
+        if out.len() < 3 && r[0] % 100 == 0 && r[0] < 10_000 && r[1] == r[0] + 99 && !out.contains(r) {
+            out.push(*r);
+        }
+    }
+    out.sort_unstable();
+    out
 }
 
 // Which member list a channel shows (GUILD_MEMBER_LIST_UPDATE's id): "everyone" when everyone
@@ -540,6 +553,16 @@ mod tests {
         let own = merged_own(&data, "5");
         assert_eq!(own["1"]["roles"][0], "7");
         assert!(!own.contains_key("2"));
+    }
+
+    #[test]
+    fn member_ranges_are_aligned_windows() {
+        assert_eq!(member_ranges(&[]), vec![[0, 99]]);
+        assert_eq!(member_ranges(&[[200, 299], [100, 199]]), vec![[0, 99], [100, 199], [200, 299]]);
+        // Unaligned, too wide, too far, repeated or one too many: dropped.
+        assert_eq!(member_ranges(&[[50, 149], [0, 999], [10_000, 10_099], [0, 99], [300, 399], [400, 499], [500, 599]]), vec![[0, 99], [300, 399], [400, 499]]);
+        let frame = subscription("1", "2", &member_ranges(&[[100, 199]]));
+        assert_eq!(frame["d"]["subscriptions"]["1"]["channels"]["2"], json!([[0, 99], [100, 199]]));
     }
 
     #[test]

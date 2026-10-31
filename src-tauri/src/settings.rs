@@ -36,6 +36,10 @@ pub fn clean_settings(raw: &Value) -> Value {
         },
         "sidePinned": raw["sidePinned"].as_bool().unwrap_or(false),
         "memberList": raw["memberList"].as_bool().unwrap_or(true),
+        // The picker's recently used emoji: a character, or a server emoji as name:id / a:name:id.
+        "recentEmoji": raw["recentEmoji"].as_array().map(|list| list.iter()
+            .filter_map(|e| e.as_str().filter(|e| !e.is_empty() && e.chars().count() <= 64 && !e.contains(['<', '>', '"', '\\'])))
+            .take(24).map(|e| json!(e)).collect::<Vec<_>>()).unwrap_or_default(),
         "closeToTray": raw["closeToTray"].as_bool().unwrap_or(true),
         "autostart": raw["autostart"].as_bool().unwrap_or(false),
         "startHidden": raw["startHidden"].as_bool().unwrap_or(false),

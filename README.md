@@ -12,8 +12,11 @@ talks to Discord's API and gateway itself.
 - **DMs, group DMs and servers**: messages, replies, reactions, edits, images, GIFs and videos,
   files, embeds, custom emoji, polls, pins, threads and forum posts (read and reply), the member
   list, unread markers, and search (`from:`, `has:`, `in:`, dates).
-- **People**: profiles (click a name or avatar), friends and requests, adding a friend by
-  username, your own status (online, idle, do not disturb, invisible), new group DMs.
+- **People**: full profiles (click a name or avatar) with status, custom status, mutual servers
+  and mutual friends; friends and requests, adding a friend by username, your own status (online,
+  idle, do not disturb, invisible), new group DMs.
+- **Emoji and GIF picker**: every emoji, searchable, with the server's own (every server's with
+  Nitro) and your recent ones; GIFs from Discord's GIF search (Tenor), trending and your favorites.
 - **Calls** in DMs, group DMs and server voice channels: voice, camera, screen sharing (Go Live)
   and watching others' streams, ringing, mute, deafen, push-to-talk, per-person volume, and
   optional global mute and deafen keys. Calls are end-to-end encrypted with Discord's DAVE
@@ -46,12 +49,13 @@ talks to Discord's API and gateway itself.
   installed LockCord downloads the installer, checks it against the checksum GitHub publishes, and
   starts it once you agree; a portable copy opens the release page. Turn it off in Settings → App.
 
-Privacy: no analytics or crash reports go anywhere, images from Discord are fetched by LockCord
-itself, the login happens on Discord's own page in a separate window (LockCord never sees your
-password), and the session is kept in Windows Credential Manager, on this computer only (never
-roaming to other machines) and encrypted for your Windows account. Calls connect to Discord's
-voice servers directly, as Discord's own app does, so Discord sees your IP address in a call. The
-update check asks `api.github.com` (with no token or anything about you), and can be turned off.
+Privacy: no analytics or crash reports go anywhere, images from Discord (and GIF previews from
+Tenor) are fetched by LockCord itself, the login happens on Discord's own page in a separate window
+(LockCord never sees your password), and the session is kept in Windows Credential Manager, on
+this computer only (never roaming to other machines) and encrypted for your Windows account.
+Calls connect to Discord's voice servers directly, as Discord's own app does, so Discord sees your
+IP address in a call. The update check asks `api.github.com` (with no token or anything about
+you), and can be turned off.
 
 ### What encrypted DMs don't protect
 

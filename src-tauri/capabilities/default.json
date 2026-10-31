@@ -84,6 +84,6 @@
     "allow-update-check",
     "allow-update-dismiss",
     "allow-update-install",
-    "allow-member-search"
+    "allow-member-search", "allow-gif-trending", "allow-gif-search", "allow-gif-favorites"
   ]
 }

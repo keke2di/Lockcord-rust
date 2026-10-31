@@ -27,6 +27,17 @@ sheet.replaceSync(`
   .pill .code { font-family: ${MONO}; }
   .lock { display: flex; color: var(--trust); }
   .lock.stale { color: var(--trust-warn); }
+  .seal { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 4px;
+          border-radius: 50%; vertical-align: -3px; color: var(--trust);
+          background: color-mix(in srgb, var(--trust) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--trust) 35%, transparent); }
+  .seal.stale { color: var(--trust-warn); background: color-mix(in srgb, var(--trust-warn) 16%, transparent);
+                box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--trust-warn) 40%, transparent); }
+  .line { display: flex; align-items: center; gap: 8px; margin: 10px 16px; font-size: 12px; font-weight: 600; color: var(--trust); }
+  .line::before, .line::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, currentColor 35%, transparent); }
+  .line .words { display: inline-flex; align-items: center; gap: 6px; text-align: center; }
+  .line .code { font-family: ${MONO}; font-weight: 700; letter-spacing: 0.04em; }
+  .line.ended { color: var(--trust-muted); }
+  .line.warn { color: var(--trust-warn); }
   .plain { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 0 6px; border: 1px solid currentColor;
            border-radius: 8px; font-size: 11px; font-weight: 600; color: var(--trust-warn); white-space: nowrap; }
   .grid { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 4px 14px; margin: 8px 0 4px;
@@ -179,6 +190,15 @@ export function secretCard(spec) {
   return el;
 }
 
+// A secret chat's or an encrypted DM's moment, as a divider across the timeline: started (with
+// the confirmed code), ended, encryption turned on. tone: '' (green), 'ended', 'warn'.
+export function secretLine(parts, tone) {
+  const [el, root] = host('block');
+  root.append(node('div', 'line' + (tone ? ' ' + tone : ''), node('span', 'words', icon(ICONS.lock, 12),
+    node('span', null, ...parts.map((p) => (typeof p === 'object' && p && p.code ? node('span', 'code', formatCode(p.code)) : p))))));
+  return el;
+}
+
 // --- Encrypted DMs (e2e.rs) ----------------------------------------------------------------------
 
 // The 60-digit safety code, shortened where there's no room: its first group. The whole code is
@@ -238,6 +258,6 @@ export function encryptedMark(doubt) {
   const [el, root] = host('inline-flex');
   el.title = doubt === 'copy' ? 'Encrypted, but this exact message was already posted before: this is a copy posted again.'
     : doubt ? 'Encrypted, but sent long before it was posted: it may be an old message posted again.' : 'Encrypted: Discord only has ciphertext';
-  root.append(node('span', doubt ? 'lock stale' : 'lock', icon(ICONS.lock, 12)));
+  root.append(node('span', doubt ? 'seal stale' : 'seal', icon(ICONS.lock, 11)));
   return el;
 }

@@ -45,6 +45,7 @@ export function plain(tree) {
       else if (n.t === 'emoji') out += ':' + n.name + ':';
       else if (n.t === 'uemoji') out += n.v;
       else if (n.t === 'mention') out += '@' + (n.name || 'unknown-user');
+      else if (n.t === 'everyone') out += '@' + n.v;
       else if (n.t === 'channel') out += '#channel';
       else if (n.t === 'time') out += new Date(n.ts * 1000).toLocaleString();
       else if (n.t === 'list') n.items.forEach((item) => { walk(item); out += ' '; });
@@ -172,6 +173,11 @@ function inline(text, depth) {
       if ((m = /^<t:(-?\d{1,13})(?::([tTdDfFR]))?>/.exec(rest))) { push({ t: 'time', ts: Number(m[1]), style: m[2] || 'f' }); i += m[0].length; continue; }
     }
 
+    // @everyone and @here, drawn as mentions (Discord pings with them only where allowed).
+    if (ch === '@' && (i === 0 || /[^\w]/.test(text[i - 1])) && (m = /^@(everyone|here)(?![\w])/.exec(rest))) {
+      push({ t: 'everyone', v: m[1] }); i += m[0].length; continue;
+    }
+
     if (ch === '[' && depth < MAX_DEPTH) {
       m = /^\[([^\]\n]{1,256})\]\(<?(https?:\/\/[^\s)>]+)>?\)/.exec(rest);
       if (m) { push({ t: 'link', href: m[2], masked: true, c: inline(m[1], depth + 1) }); i += m[0].length; continue; }
@@ -293,6 +299,7 @@ function build(n, doc, ctx) {
       return a;
     }
     case 'mention': return el(doc, 'span', 'md-mention', [text(doc, '@' + ((ctx.nameOf && ctx.nameOf(n.id)) || 'unknown-user'))]);
+    case 'everyone': return el(doc, 'span', 'md-mention', [text(doc, '@' + n.v)]);
     case 'role': {
       // A server's role, in its colour, where the page knows it (ctx.roleOf).
       const role = ctx.roleOf && n.id && ctx.roleOf(n.id);

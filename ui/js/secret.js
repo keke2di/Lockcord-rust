@@ -51,7 +51,12 @@ export function createSecret(onChange) {
         })
         .catch((e) => { console.warn('invite not posted', e); session && session.end('server-lost'); });
     },
-    verification(v) { chat.verification = v; changed(); },
+    verification(v) {
+      chat.verification = v;
+      // The moment both confirmed: the chat's "started" line and its first message come after it.
+      if (v.me && v.peer && !chat.openedAt) chat.openedAt = Date.now();
+      changed();
+    },
     connection(state) { chat.reconnecting = state === 'disconnected'; changed(); },
     message(m) {
       chat.records.push(Object.assign({ reactions: [], at: Date.now() }, m));
@@ -79,6 +84,7 @@ export function createSecret(onChange) {
       const c = chat;
       const why = reason === 'connect-failed' && direct.relaySeen() ? 'relay' : reason;
       c.ended = why;
+      c.endedAt = Date.now();
       c.normalEnd = NORMAL_ENDS.has(why);
       // Its messages, files and pictures go from the page straight away.
       for (const r of c.records) if (r.url) URL.revokeObjectURL(r.url);

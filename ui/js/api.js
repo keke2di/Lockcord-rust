@@ -56,7 +56,10 @@ export const api = {
   // Search (search.rs): a server (guildId) or a DM (channelId); never an encrypted DM.
   search: (guildId, channelId, query, offset) => call('search', { guildId: guildId || null, channelId: channelId || null, query, offset: offset || 0 }),
   // Opening a server channel: Rust sends the web client's op 37 for it (typing, member list).
-  subscribe: (guildId, channelId) => call('subscribe', { guildId, channelId }),
+  subscribe: (guildId, channelId, ranges) => call('subscribe', { guildId, channelId, ranges: ranges || null }),
+  gifTrending: () => call('gif_trending'),
+  gifSearch: (q) => call('gif_search', { q: q || null }),
+  gifFavorites: () => call('gif_favorites'),
   // Settings and themes (settings.rs): kept by Rust per profile; the window keeps nothing.
   settingsGet: () => call('settings_get'),
   settingsSave: (settings) => call('settings_save', { settings }),

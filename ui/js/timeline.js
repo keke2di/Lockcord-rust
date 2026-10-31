@@ -6,7 +6,7 @@
 import { h, icon, ICONS, formatBytes, sameDay, stamp, shortTime, formatTime } from './dom.js';
 import { parse, render, jumbo, plain } from './markdown.js';
 import { avatar, displayName, nameOf, remember } from './people.js';
-import { encryptedMark, plainMark, secretCard } from './trust.js';
+import { encryptedMark, plainMark, secretCard, secretLine } from './trust.js';
 
 const GROUP_GAP_MS = 7 * 60 * 1000;
 
@@ -94,6 +94,8 @@ export function renderTimeline(list, items, ctx) {
       list.appendChild(card(item.chat, ctx));
     } else if (item.kind === 'offer') {
       list.appendChild(offerCard(ctx));
+    } else if (item.kind === 'secret-line') {
+      list.appendChild(lineItem(secretLine([item.text], '')));
     } else if (item.kind === 'system') {
       list.appendChild(h('li', { class: 'system-message' }, icon(ICONS.lock, 14), ' ', item.r.text));
     }
@@ -147,7 +149,7 @@ function startsGroup(item, prev, ctx) {
   if (!prev || (prev.kind !== 'discord' && prev.kind !== 'secret')) return true;
   if (prev.kind !== item.kind) return true;
   // After a system message (a join, a pin) a new group starts.
-  if (prev.kind === 'discord' && ![0, 19, 20, 23].includes(prev.m.type)) return true;
+  if (prev.kind === 'discord' && (![0, 19, 20, 23].includes(prev.m.type) || prev.m.lc_key)) return true;
   if ((authorOf(prev, ctx) || {}).id !== (authorOf(item, ctx) || {}).id) return true;
   if (item.at - prev.at > GROUP_GAP_MS) return true;
   if (item.kind === 'discord' && item.m.message_reference) return true;
@@ -159,7 +161,7 @@ function startsGroup(item, prev, ctx) {
 // opens the author's profile from their avatar or name.
 function row({ start, author, at, body, cls, reply, name, color, profile }) {
   const li = h('li', { class: 'message' + (start ? ' group-start' : '') + (cls ? ' ' + cls : '') });
-  if (reply) li.appendChild(reply);
+  if (reply) li.append(h('span', { class: 'reply-spine', 'aria-hidden': 'true' }), reply);
   if (start) {
     const face = avatar(author);
     const username = h('span', { class: 'username' }, name || displayName(author));
@@ -185,7 +187,10 @@ function content(text, md, edited, mentions) {
   const tree = parse(text);
   const node = h('div', { class: 'content' + (jumbo(tree) ? ' jumbo' : '') });
   node.appendChild(render(tree, document, md));
-  if (edited) node.appendChild(h('span', { class: 'edited', title: 'Edited' }, ' (edited)'));
+  if (edited) {
+    const last = node.lastElementChild && node.lastElementChild.matches('.md-p') ? node.lastElementChild : node;
+    last.appendChild(h('span', { class: 'edited', title: 'Edited' }, ' (edited)'));
+  }
   return node;
 }
 
@@ -252,7 +257,7 @@ function discordRow(item, prev, md, ctx) {
       reply.appendChild(h('span', { class: 'reply-snippet' }, 'Original message was deleted'));
     }
   }
-  const li = row({ start: startsGroup(item, prev, ctx), author: m.author, at: item.at, body, reply, cls: (editing ? 'editing' : '') + (d.isMine(m) ? ' mine' : ''), name: d.authorName(m), color: d.authorColor(m),
+  const li = row({ start: startsGroup(item, prev, ctx), author: m.author, at: item.at, body, reply, cls: (editing ? 'editing' : '') + (d.isMine(m) ? ' mine' : '') + (d.mentionsMe && d.mentionsMe(m) ? ' mentioned' : ''), name: d.authorName(m), color: d.authorColor(m),
     profile: m.author && m.author.id ? (anchor) => d.profile(m.author, anchor) : null });
   li.dataset.id = m.id;
   markFresh(li, item);
@@ -432,15 +437,28 @@ function keyLine(m, d) {
   const text = m.lc_key_changed ? '⚠ ' + d.peerName() + '’s LockCord posted a different key. Nothing is sent until you check it in the header.'
     : mine ? (m.lc_key_role === 'offer' ? 'You turned on encryption here.' : 'Your LockCord answered with its key.')
     : (m.lc_key_role === 'offer' ? d.peerName() + '’s LockCord shared its key.' : d.peerName() + '’s LockCord answered: this DM is encrypted.');
-  return h('li', { class: 'system-message key-line' + (m.lc_key_changed ? ' warn' : '') }, icon(ICONS.lock, 14), ' ', text);
+  const li = lineItem(secretLine([text], m.lc_key_changed ? 'warn' : ''));
+  li.classList.add('key-line');
+  li.dataset.id = m.id;
+  return li;
+}
+
+// A trust.js divider as a timeline row that themes can't hide.
+function lineItem(node) {
+  const li = h('li', { class: 'status-card secret-line' }, node);
+  li.style.setProperty('display', 'list-item', 'important');
+  li.style.setProperty('visibility', 'visible', 'important');
+  return li;
 }
 
 // Encrypted DMs (e2e.rs opened them in Rust): a lock on those that were; a note on those that
 // can't be read; and, in an encrypted DM, a word on those that weren't encrypted.
 function e2eNote(body, m, d) {
   if (m.lc_e2e) {
+    // The lock ends the text's last line rather than taking a line of its own.
     const text = body.querySelector('.content');
-    (text || body).appendChild(encryptedMark(m.lc_e2e_replayed ? 'copy' : m.lc_e2e_stale ? 'stale' : null));
+    const last = text && text.lastElementChild && text.lastElementChild.matches('.md-p') ? text.lastElementChild : text;
+    (last || body).appendChild(encryptedMark(m.lc_e2e_replayed ? 'copy' : m.lc_e2e_stale ? 'stale' : null));
     if (m.lc_e2e_replayed) body.appendChild(h('div', { class: 'e2e-note warn' }, 'A copy: this exact encrypted message was already posted here before, so someone posted it again.'));
     else if (m.lc_e2e_stale) body.appendChild(h('div', { class: 'e2e-note warn' }, 'Sent long before it was posted: it may be an old message posted again.'));
   } else if (m.lc_e2e_failed) {
@@ -548,10 +566,11 @@ function card(chat, ctx) {
       buttons: [{ label: 'Join', yes: true, onclick: () => ctx.joinSecret() }, { label: 'Ignore', onclick: () => ctx.ignoreSecret() }],
     };
   } else if (chat.ended) {
-    spec = { tone: 'ended', title: 'Secret chat ended', text: [(END_TEXT[chat.ended] || 'The secret chat ended.') + ' Its messages are gone.'] };
+    const normal = chat.normalEnd;
+    return lineItem(secretLine(['Secret chat ended · ' + (END_TEXT[chat.ended] || 'The secret chat ended.') + ' Its messages are gone.'], normal ? 'ended' : 'warn'));
   } else if (chat.phase === 'open' && v.me && v.peer) {
-    spec = { tone: 'quiet verified', lock: true, text: ['Secret chat with ' + them + ': end-to-end encrypted, peer to peer. You both confirmed the code ',
-      { code: v.sas }, '. Discord sees none of it.' + (chat.reconnecting ? ' Reconnecting…' : '')] };
+    return lineItem(secretLine(['Secret chat with ' + them + ' started · code ', { code: v.sas }, ' · end-to-end, peer to peer: Discord sees none of it'
+      + (chat.reconnecting ? ' · Reconnecting…' : '')], ''));
   } else if (chat.phase === 'open') {
     spec = {
       tone: 'gate', title: 'Compare the code with ' + them, code: v.sas,

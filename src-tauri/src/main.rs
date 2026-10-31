@@ -14,6 +14,7 @@ mod desktop;
 mod e2e;
 mod fingerprint;
 mod gateway;
+mod gifs;
 mod guard;
 mod guilds;
 mod media;
@@ -56,6 +57,8 @@ struct Live {
     relationships: Vec<Value>,
     // User id -> online, idle, dnd or offline, for friends.
     presences: HashMap<String, String>,
+    // User id -> custom status ({ text, emoji }), for friends who have one.
+    customs: HashMap<String, Value>,
     // Channel id -> { last: the last message read, mentions: unread mentions }.
     reads: HashMap<String, Value>,
     guilds: Vec<guilds::Guild>,
@@ -65,7 +68,7 @@ struct Live {
     muted: (Vec<String>, Vec<String>),
     // Frames for the gateway to send (op 37), and the server and channel subscribed to.
     outbound: mpsc::Sender<Value>,
-    subscribed: Option<(String, String)>,
+    subscribed: Option<(String, String, Vec<[u32; 2]>)>,
     // Every delete goes through this one queue (deletion.rs).
     queue: deletion::Queue,
     guard: Vec<guard::Rule>,
@@ -244,8 +247,8 @@ impl Live {
     }
 
     fn resubscribe(&self) {
-        if let Some((guild, channel)) = &self.subscribed {
-            let _ = self.outbound.try_send(guilds::subscription(guild, channel));
+        if let Some((guild, channel, ranges)) = &self.subscribed {
+            let _ = self.outbound.try_send(guilds::subscription(guild, channel, ranges));
         }
     }
 
@@ -339,6 +342,17 @@ fn presences_of(data: &Value) -> HashMap<String, String> {
     old.chain(new).filter_map(presence).collect()
 }
 
+// READY's friends' custom statuses, from the same presences.
+fn customs_of(data: &Value) -> HashMap<String, Value> {
+    let old = data["presences"].as_array().into_iter().flatten();
+    let new = data["merged_presences"]["friends"].as_array().into_iter().flatten();
+    old.chain(new).filter_map(|p| {
+        let id = p["user"]["id"].as_str().or(p["user_id"].as_str())?;
+        let custom = people::custom_status(p);
+        (!custom.is_null()).then(|| (id.to_owned(), custom))
+    }).collect()
+}
+
 fn presence(p: &Value) -> Option<(String, String)> {
     let id = p["user"]["id"].as_str().or(p["user_id"].as_str())?;
     let status = p["status"].as_str().filter(|s| ["online", "idle", "dnd", "offline"].contains(s)).unwrap_or("offline");
@@ -361,9 +375,11 @@ fn newer(a: &str, b: &str) -> bool {
 
 fn ready_view(live: &Live) -> Value {
     json!({
-        "me": live.me, "dms": live.dms, "relationships": live.relationships, "presences": live.presences, "reads": live.reads,
+        "me": live.me, "dms": live.dms, "relationships": live.relationships, "presences": live.presences, "customs": live.customs, "reads": live.reads,
         "guilds": live.guild_views(), "muted": { "guilds": live.muted.0, "channels": live.muted.1 },
         "e2e": live.e2e_view(), "my_status": live.my_status, "voice": live.calls.view(),
+        // Nitro (from the upload limit it allows): other servers' emoji may then be used anywhere.
+        "nitro": live.upload_limit > media::upload_limit(None),
     })
 }
 
@@ -423,7 +439,7 @@ async fn start_session(app: AppHandle, token: String, save: bool) -> Result<Valu
     let e2e_state = load_e2e(&app, &state, me["id"].as_str().unwrap_or(""));
     *state.live.lock().unwrap() = Some(Live {
         rest, stop, me: user_view(&me), dms: Vec::new(), gateway: "connecting", saved: !save, own: HashSet::new(), upload_limit, uploads: HashSet::new(),
-        relationships: Vec::new(), presences: HashMap::new(), reads: HashMap::new(),
+        relationships: Vec::new(), presences: HashMap::new(), customs: HashMap::new(), reads: HashMap::new(),
         guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound, subscribed: None,
         queue, guard: rules, wiping: HashSet::new(), purge: None, e2e: e2e_state, my_status: people::status_view("online"), dm_ok: HashSet::new(),
         calls: call::Calls::default(),
@@ -476,6 +492,7 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
             live.dms = dms;
             live.relationships = data["relationships"].as_array().map(|list| list.iter().filter_map(|r| rel_view(r, &users)).collect()).unwrap_or_default();
             live.presences = presences_of(&data);
+            live.customs = customs_of(&data);
             live.reads = reads_of(&data);
             if data["user"].is_object() {
                 live.me = user_view(&data["user"]);
@@ -678,7 +695,7 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
         }
         "GUILD_MEMBER_LIST_UPDATE" => {
             // Only the open server's list is asked for.
-            if live.subscribed.as_ref().map(|(g, _)| g.as_str()) != data["guild_id"].as_str() {
+            if live.subscribed.as_ref().map(|(g, _, _)| g.as_str()) != data["guild_id"].as_str() {
                 return;
             }
             drop(guard);
@@ -747,8 +764,10 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
             }
             let Some((id, status)) = presence(&data) else { return };
             live.presences.insert(id.clone(), status.clone());
+            let custom = people::custom_status(&data);
+            if custom.is_null() { live.customs.remove(&id); } else { live.customs.insert(id.clone(), custom.clone()); }
             drop(guard);
-            emit(app, "lc://presence", json!({ "id": id, "status": status }));
+            emit(app, "lc://presence", json!({ "id": id, "status": status, "custom": custom }));
         }
         // The status changed, here or on another of this account's clients.
         "USER_SETTINGS_PROTO_UPDATE" | "USER_SETTINGS_UPDATE" => {
@@ -2425,16 +2444,17 @@ struct Upload {
 }
 
 // Opening a server channel: the op 37 the web client sends, for its typing, activity and member
-// list. Only for a channel this account can see, and only when it changes.
+// list (ranges: the list's 100-row windows in view, guilds.rs `member_ranges`). Only for a
+// channel this account can see, and only when it changes.
 #[tauri::command]
-fn subscribe(state: State<App>, guild_id: String, channel_id: String) -> Result<(), String> {
+fn subscribe(state: State<App>, guild_id: String, channel_id: String, ranges: Option<Vec<[u32; 2]>>) -> Result<(), String> {
     let mut guard = state.live.lock().unwrap();
     let live = guard.as_mut().ok_or("Not signed in.")?;
     let ok = live.guild_with(&channel_id).is_some_and(|g| live.guilds[g].id == guild_id);
     if !ok {
         return Err("Not a channel you can see.".into());
     }
-    let want = Some((guild_id, channel_id));
+    let want = Some((guild_id, channel_id, guilds::member_ranges(&ranges.unwrap_or_default())));
     if live.subscribed != want {
         live.subscribed = want;
         live.resubscribe();
@@ -2800,7 +2820,7 @@ async fn user_profile(state: State<'_, App>, user_id: String, guild_id: Option<S
     };
     let mut path = format!("/users/{user_id}/profile?");
     if user_id != me {
-        path.push_str("with_mutual_guilds=true&with_mutual_friends_count=true&");
+        path.push_str("with_mutual_guilds=true&with_mutual_friends=true&with_mutual_friends_count=true&");
     }
     if let Some(g) = &guild_id {
         path.push_str(&format!("guild_id={g}"));
@@ -2816,6 +2836,35 @@ async fn user_profile(state: State<'_, App>, user_id: String, guild_id: Option<S
         }
     }
     Ok(view)
+}
+
+// --- GIFs for the picker (gifs.rs) --------------------------------------------------------------
+
+// Trending: GIF categories and a preview for the "Trending GIFs" tile.
+#[tauri::command]
+async fn gif_trending(state: State<'_, App>) -> Result<Value, String> {
+    let body = rest_of(&state)?.get(&format!("/gifs/trending?{}", gifs::query(None, &fingerprint::discord_locale()))).await.map_err(|e| e.to_string())?;
+    Ok(gifs::trending_view(&body))
+}
+
+// Trending GIFs themselves, or a search (a category's tile searches for its name).
+#[tauri::command]
+async fn gif_search(state: State<'_, App>, q: Option<String>) -> Result<Value, String> {
+    let q = q.map(|q| q.trim().chars().take(100).collect::<String>()).filter(|q| !q.is_empty());
+    let locale = fingerprint::discord_locale();
+    let path = match &q {
+        Some(q) => format!("/gifs/search?{}", gifs::query(Some(q), &locale)),
+        None => format!("/gifs/trending-gifs?{}&limit={}", gifs::query(None, &locale), gifs::MAX),
+    };
+    let body = rest_of(&state)?.get(&path).await.map_err(|e| e.to_string())?;
+    Ok(gifs::gifs_view(&body))
+}
+
+// The account's favourite GIFs, read from its frecency settings (never written here).
+#[tauri::command]
+async fn gif_favorites(state: State<'_, App>) -> Result<Value, String> {
+    let body = rest_of(&state)?.get("/users/@me/settings-proto/2").await.map_err(|e| e.to_string())?;
+    Ok(gifs::favorites(body["settings"].as_str().unwrap_or("")))
 }
 
 // This account's status (online, idle, dnd, invisible), saved in Discord's settings as the web
@@ -3188,7 +3237,7 @@ fn main() {
             voice: Mutex::new(call::VoiceSettings::from(&Value::Null)), frames: Arc::new(call::Frames::default()), mic_test: Mutex::new(None) })
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);
@@ -3309,7 +3358,7 @@ mod tests {
         theirs.record(&bob, "200", "100", answer, true);
         let live = Live {
             rest, stop, me: json!({ "id": "100" }), dms: vec![json!({ "id": "555", "type": 1, "recipients": [{ "id": "200" }] })], gateway: "connected", saved: true,
-            own: HashSet::new(), upload_limit: 0, uploads: HashSet::new(), relationships: Vec::new(), presences: HashMap::new(), reads: HashMap::new(),
+            own: HashSet::new(), upload_limit: 0, uploads: HashSet::new(), relationships: Vec::new(), presences: HashMap::new(), customs: HashMap::new(), reads: HashMap::new(),
             guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound: mpsc::channel(1).0, subscribed: None,
             queue: deletion::Queue::start(Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()))), guard: Vec::new(), wiping: HashSet::new(), purge: None,
             e2e: E2eState { identity: Some(mine), book, pinned: HashSet::from(["200".to_owned()]), answering: HashSet::new(), problem: None },
@@ -3360,7 +3409,7 @@ mod tests {
         let rest = Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()));
         let mut live = Live {
             rest, stop, me: json!({ "id": "1" }), dms: Vec::new(), gateway: "connected", saved: true, own: HashSet::new(), upload_limit: 0, uploads: HashSet::new(),
-            relationships: Vec::new(), presences: HashMap::new(), reads: HashMap::new(),
+            relationships: Vec::new(), presences: HashMap::new(), customs: HashMap::new(), reads: HashMap::new(),
             guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound: mpsc::channel(1).0, subscribed: None,
             queue: deletion::Queue::start(Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()))), guard: Vec::new(), wiping: HashSet::new(), purge: None, e2e: E2eState::default(),
             my_status: Value::Null, dm_ok: HashSet::new(), calls: call::Calls::default(),

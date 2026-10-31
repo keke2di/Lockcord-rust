@@ -1,12 +1,15 @@
-// Emoji for the chat: Discord's :shortcodes: for the common ones (typed ones become the emoji when
-// sent, as in Discord), and the picker's set, which is ecdh.chat's own.
+// Emoji for the chat: :shortcodes: (typed ones become the emoji when sent, as in Discord), from
+// every emoji's own names (emoji-data.js) and Discord's for the common ones; ecdh.chat's own set
+// stays for secret chats' reactions.
 
-export { EMOJI_CATEGORIES } from '../secure/js/emoji.js';
+import { EMOJI } from './emoji-data.js';
+
 // The reactions ecdh.chat's protocol carries (secure/js/messages.js REACTIONS); nothing else can
 // be sent as one.
 export { REACTIONS } from '../secure/js/messages.js';
 
-export const SHORTCODES = {
+// Discord's names for the common ones, over every emoji's own shortcodes (emoji-data.js).
+const NAMED = {
   smile: '😄', smiley: '😃', grinning: '😀', grin: '😁', laughing: '😆', sweat_smile: '😅', joy: '😂',
   rofl: '🤣', slight_smile: '🙂', upside_down: '🙃', wink: '😉', blush: '😊', innocent: '😇',
   heart_eyes: '😍', star_struck: '🤩', kissing_heart: '😘', yum: '😋', stuck_out_tongue: '😛',
@@ -26,6 +29,12 @@ export const SHORTCODES = {
   beer: '🍺', cake: '🍰', gift: '🎁', rocket: '🚀', moneybag: '💰', bulb: '💡', shrug: '🤷',
   facepalm: '🤦', salute: '🫡', melting_face: '🫠', saluting_face: '🫡', handshake: '🤝',
 };
+
+export const SHORTCODES = (() => {
+  const out = {};
+  for (const [char, , codes] of EMOJI) for (const name of codes.split(' ')) if (name && !(name in out)) out[name] = char;
+  return Object.assign(out, NAMED);
+})();
 
 // :shortcode: in typed text becomes the emoji, the way Discord sends it.
 export function replaceShortcodes(text) {

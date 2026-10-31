@@ -4,9 +4,10 @@
 
 import { api, media, on } from './api.js';
 import { formatTime, h, icon, ICONS, snowflakeTime } from './dom.js';
-import { EMOJI_CATEGORIES, REACTIONS, replaceShortcodes } from './emoji.js';
+import { REACTIONS, replaceShortcodes } from './emoji.js';
+import { createPicker, withRecent } from './picker.js';
 import { avatarWithStatus, displayName, nameOf, remember, user } from './people.js';
-import { applyMemberList, colorFor, firstChannel, renderChannels, renderMembers, renderRail, roleOf, TEXT_TYPES } from './servers.js';
+import { applyMemberList, colorFor, customStatus, firstChannel, guildIcon, membersIn, rangesFor, renderChannels, renderMembers, renderRail, roleOf, rowsInView, TEXT_TYPES } from './servers.js';
 import { removeWords, renderFriends, STATUS_TEXT } from './friends.js';
 import { createSecret } from './secret.js';
 import { applyDisplay, applyTheme, currentTheme, preset } from './theme.js';
@@ -49,12 +50,16 @@ const state = {
   friendsTab: 'online',
   relationships: [],     // friends, requests, blocks (main.rs rel_view)
   presences: new Map(),  // user id -> online, idle, dnd, offline
+  customs: new Map(),    // user id -> a friend's custom status { text, emoji }
   reads: new Map(),      // channel id -> { last, mentions }
   guilds: [],            // servers as guilds.rs views them, in the user's order
   guildId: null,         // the server shown, or null for Direct Messages
   lastChannel: new Map(),// server id -> the channel last open there
   muted: { guilds: new Set(), channels: new Set() },
-  memberList: null,      // the open channel's member list (servers.js applyMemberList)
+  memberLists: new Map(),// the open server's member lists by list id (servers.js applyMemberList)
+  memberListsOf: null,   // the server those lists are from
+  memberSub: null,       // { guild, channel, ranges }: the op 37 last sent
+  memberPresence: new Map(), // user id -> { status, custom }: server members seen in a member list
   showMemberList: true,
   sidePinned: false,     // the side panel kept open in place, instead of sliding out on hover
   translations: new Map(), // message id -> { text, detected } | 'pending' | 'failed'
@@ -147,11 +152,12 @@ const uploads = h('div', { class: 'uploads', hidden: true });
 const fileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: () => { stage([...fileInput.files]); fileInput.value = ''; } });
 const textarea = h('textarea', { class: 'composer-input', rows: 1, maxLength: MAX_TEXT, spellcheck: true, 'aria-label': 'Message' });
 const attach = h('button', { type: 'button', class: 'composer-button attach', 'aria-label': 'Upload a file', onclick: () => fileInput.click() }, icon(ICONS.plus, 24));
-const emojiButton = h('button', { type: 'button', class: 'composer-button emoji', 'aria-label': 'Select emoji', onclick: (e) => { e.stopPropagation(); toggleEmojiPicker(); } }, icon(ICONS.react, 24));
+const emojiButton = h('button', { type: 'button', class: 'composer-button emoji', 'aria-label': 'Select emoji', title: 'Select emoji', onclick: (e) => { e.stopPropagation(); togglePicker('emoji'); } }, icon(ICONS.react, 24));
+const gifButton = h('button', { type: 'button', class: 'composer-button gif', 'aria-label': 'Open GIF picker', title: 'Open GIF picker', onclick: (e) => { e.stopPropagation(); togglePicker('gif'); } }, h('span', { class: 'gif-badge' }, 'GIF'));
 // Filled with trust.js's bar while the composer sends into a secret chat.
 const composerMark = h('div', { class: 'composer-mark', hidden: true });
 const translateHint = h('div', { class: 'translate-hint', hidden: true });
-const composer = h('div', { class: 'composer' }, attach, textarea, emojiButton);
+const composer = h('div', { class: 'composer' }, attach, textarea, gifButton, emojiButton);
 const typingLine = h('div', { class: 'typing', 'aria-live': 'polite' });
 // After a jump to an old message the newest ones aren't loaded: this bar brings them back.
 const presentBar = h('div', { class: 'present-bar', hidden: true }, h('span', null, 'You’re viewing older messages'),
@@ -167,7 +173,7 @@ const acContext = {
   // People seen in this server this session: its member list, and who wrote in its channels.
   known: (guild) => {
     const out = [];
-    if (state.memberList && state.guildId === guild.id) for (const it of state.memberList.items) if (it.member) out.push({ user: it.member.user, nick: it.member.nick });
+    if (state.memberListsOf === guild.id) for (const list of state.memberLists.values()) for (const it of list.items) if (it && it.member) out.push({ user: it.member.user, nick: it.member.nick });
     for (const [id, list] of state.messages) {
       const c = dmById(id);
       if (!c || c.guild_id !== guild.id) continue;
@@ -180,6 +186,20 @@ const acContext = {
 const composerSuggest = attachAutocomplete(textarea, acContext);
 const form = h('form', { class: 'composer-wrap', onsubmit: (e) => { e.preventDefault(); submit(); } }, presentBar, composerMark, translateHint, replyBar, uploads, composerSuggest.box, composer, fileInput, typingLine);
 const memberPanel = h('aside', { class: 'member-panel', 'aria-label': 'Members' });
+// Scrolling the member list asks for the 100-row windows in view (at most every 250 ms).
+let memberScrollTimer = null;
+memberPanel.addEventListener('scroll', () => {
+  if (memberScrollTimer) return;
+  memberScrollTimer = setTimeout(() => {
+    memberScrollTimer = null;
+    const sub = state.memberSub;
+    if (!sub || memberPanel.hidden) return;
+    const ranges = rangesFor(rowsInView(memberPanel));
+    if (JSON.stringify(ranges) === JSON.stringify(sub.ranges)) return;
+    sub.ranges = ranges;
+    api.subscribe(sub.guild, sub.channel, ranges).catch((e) => console.warn('subscribe', e));
+  }, 250);
+}, { passive: true });
 const searchPanel = h('aside', { class: 'search-panel', 'aria-label': 'Search results', hidden: true });
 // A DM's call: its stage while this device is in it, or "Call in progress".
 const callSlot = h('div', { class: 'call-slot' });
@@ -316,8 +336,18 @@ function openGuild(g) {
   else { showFriends(); state.guildId = g.id; refresh(); }
 }
 
+// Someone's status: a friend's from their presence, a server member's from a member list seen.
 function statusOf(user) {
-  return (user && state.presences.get(user.id)) || 'offline';
+  if (!user) return 'offline';
+  const member = state.memberPresence.get(user.id);
+  return state.presences.get(user.id) || (member && member.status) || 'offline';
+}
+
+// Someone's custom status ({ text, emoji }), where it's known.
+function customOf(user) {
+  if (!user) return null;
+  const member = state.memberPresence.get(user.id);
+  return state.customs.get(user.id) || (member && member.custom) || null;
 }
 
 // A group's own icon, or the first letter of its name.
@@ -440,8 +470,12 @@ async function select(id) {
   state.lastChannel.set(state.guildId || '@me', id);
   if (conv && conv.guild_id) {
     // The web client's op 37 for this channel (a thread's parent): typing, activity, members.
+    // Lists are kept per server: channels that share a list (most do) show it at once, as
+    // Discord sends no new SYNC for a list already subscribed to.
     const sub = conv.thread && conv.parent_id ? conv.parent_id : id;
-    if (!state.memberList || state.memberList.channel !== sub) state.memberList = null;
+    if (state.memberListsOf !== conv.guild_id) { state.memberLists = new Map(); state.memberListsOf = conv.guild_id; }
+    if (!state.memberSub || state.memberSub.channel !== sub) memberPanel.scrollTop = 0;
+    state.memberSub = { guild: conv.guild_id, channel: sub, ranges: rangesFor(null) };
     api.subscribe(conv.guild_id, sub).catch((e) => console.warn('subscribe', e));
   }
   textarea.value = '';
@@ -484,21 +518,37 @@ async function select(id) {
 function itemsFor(id) {
   const items = (state.messages.get(id) || []).map((m) => ({ kind: 'discord', at: Date.parse(m.timestamp) || snowflakeTime(m.id), m }));
   // Their LockCord offered encryption: a card asks before anything is answered.
+  // Cards that wait for an answer (an offer, an invite, the code, a chat connecting) stay at
+  // the bottom, by the composer; lines that record something sit where it happened, local times
+  // moved onto Discord's clock.
+  const BOTTOM = Number.MAX_SAFE_INTEGER;
+  const local = (t) => t + (state.clockSkew || 0);
   const e = e2eOf(id);
-  if (e && e.status === 'offered') items.push({ kind: 'offer', at: e.since || Date.now() });
+  if (e && e.status === 'offered') items.push({ kind: 'offer', at: BOTTOM });
   const c = secret.in(id);
   const invite = !c && secret.invitation(id);
   if (invite) {
     const friend = state.relationships.some((r) => r.type === 1 && r.id === invite.peer.id);
-    items.push({ kind: 'card', at: invite.at, chat: { phase: 'invited', stranger: !friend, verification: {} } });
+    items.push({ kind: 'card', at: BOTTOM, chat: { phase: 'invited', stranger: !friend, verification: {} } });
   }
   if (c) {
-    items.push({ kind: 'card', at: c.startedAt, chat: c });
     const open = c.phase === 'open' && c.verification.me && c.verification.peer;
-    // Until both have confirmed the code, nothing of the secret chat shows.
-    if (open) for (const r of c.records) if (!r.deleted) items.push({ kind: r.kind === 'system' ? 'system' : 'secret', at: r.at, r, chat: c });
+    if (c.ended) {
+      if (c.openedAt) items.push({ kind: 'secret-line', at: local(c.openedAt), text: 'Secret chat started', chat: c });
+      items.push({ kind: 'card', at: local(c.endedAt || Date.now()), chat: c });
+    } else if (open) {
+      items.push({ kind: 'card', at: local(c.openedAt || c.startedAt), chat: c });
+      // Until both have confirmed the code, nothing of the secret chat shows.
+      for (const r of c.records) if (!r.deleted) items.push({ kind: r.kind === 'system' ? 'system' : 'secret', at: local(r.at), r, chat: c });
+    } else {
+      items.push({ kind: 'card', at: BOTTOM, chat: c });
+    }
   }
-  return items.sort((a, b) => a.at - b.at);
+  items.sort((a, b) => a.at - b.at);
+  // The bottom cards get a real time (for the day dividers): now, or after the newest.
+  let last = local(Date.now());
+  for (const it of items) if (it.at === BOTTOM) it.at = last; else last = Math.max(last, it.at);
+  return items;
 }
 
 // Channels Guard watches (guard.rs), for the header's shield.
@@ -779,6 +829,11 @@ function drawComposer(dm) {
   const mute = !!dm.guild_id && !dm.can_send;
   textarea.disabled = held || mute || state.uploading || blocked || loading;
   emojiButton.disabled = held || mute;
+  // A GIF goes as its Tenor link, a Discord message: not in a secret chat, nor sealed in an
+  // encrypted DM (only when the next message goes unencrypted on purpose).
+  gifButton.hidden = secretMode;
+  gifButton.disabled = held || mute || state.uploading || blocked || loading || (e2eMode && !plain);
+  gifButton.title = e2eMode && !plain ? 'GIFs can’t go encrypted' : 'Open GIF picker';
   attach.disabled = held || mute || state.uploading || (!!dm.guild_id && !dm.can_attach) || (e2eMode && !plain);
   attach.title = secretMode ? 'Upload a file (secret)' : dm.guild_id && !dm.can_attach ? 'You can’t upload files here'
     : e2eMode && !plain ? 'Files can’t go encrypted yet' : 'Upload a file';
@@ -861,11 +916,15 @@ function reactTo(m, key, add) {
 }
 
 function pickReaction(m, anchor) {
-  emojiPicker(anchor, (e) => {
-    closeLayer();
-    const mine = (m.reactions || []).some((r) => r.me && emojiKey(r.emoji) === e);
-    reactTo(m, e, !mine);
-  });
+  const conv = dmById(m.channel_id);
+  popupAt(anchor, createPicker(pickerOptions(conv, {
+    tab: 'emoji', gifs: false,
+    onEmoji: (p) => {
+      closeLayer();
+      const mine = (m.reactions || []).some((r) => r.me && emojiKey(r.emoji) === p.key);
+      reactTo(m, p.key, !mine);
+    },
+  })));
 }
 
 function removeDiscord(m, now) {
@@ -1170,6 +1229,18 @@ function refresh(toEnd) {
   requestAnimationFrame(() => { refreshQueued = false; draw(false); });
 }
 
+// Whether a message pings this account, as Discord highlights it: by name (a reply with the ping
+// on lists the replied-to author too), by one of its roles, or @everyone / @here (Discord sets
+// mention_everyone for both, only where the sender may use them).
+function mentionsMe(m, guild) {
+  const me = state.me && state.me.id;
+  if (!me || !m || (m.author && m.author.id === me)) return false;
+  if (m.mention_everyone) return true;
+  if ((m.mentions || []).some((u) => u && u.id === me)) return true;
+  const mine = (guild && guild.my_roles) || [];
+  return (m.mention_roles || []).some((id) => mine.includes(id));
+}
+
 function draw(toEnd) {
   if (root.firstChild !== mainScreen) return;
   drawSidebar();
@@ -1218,6 +1289,7 @@ function draw(toEnd) {
     discord: {
       editing: state.discordEditing,
       isMine,
+      mentionsMe: (m) => mentionsMe(m, guildById(dm.guild_id)),
       canReply: canReplyOnDiscord(dm.id) && (!dm.guild_id || dm.can_send),
       canReact: !dm.guild_id || dm.can_react,
       authorName,
@@ -1249,7 +1321,7 @@ function draw(toEnd) {
   const searching = !!state.search && state.search.scope === searchScope(dm);
   const members = !!dm.guild_id && state.showMemberList && !dm.thread && !searching;
   memberPanel.hidden = !members;
-  if (members) renderMembers(memberPanel, guildById(dm.guild_id), state.memberList && state.memberList.channel === dm.id ? state.memberList : null, (u, anchor) => openProfile(u, anchor, dm.guild_id));
+  if (members) renderMembers(memberPanel, guildById(dm.guild_id), state.memberListsOf === dm.guild_id ? state.memberLists.get(dm.member_list) || null : null, (u, anchor) => openProfile(u, anchor, dm.guild_id));
   searchPanel.hidden = !searching;
   if (searching) drawSearch(dm);
   if (keepTop) { keepTop = false; scroller.scrollTop = top; }
@@ -1488,23 +1560,10 @@ window.addEventListener('paste', (e) => {
 const profiles = new Map(); // 'user|guild' -> the profile, once fetched this session
 const relationOf = (id) => { const r = state.relationships.find((x) => x.id === id); return r ? r.type : null; };
 
-// A popout beside what was clicked (to its right, or its left where there's no room).
-function popoutBeside(anchor, node) {
-  closeLayer();
-  layer.appendChild(node);
-  const a = anchor.getBoundingClientRect();
-  const w = node.offsetWidth;
-  const left = a.right + 8 + w <= window.innerWidth - 8 ? a.right + 8 : Math.max(8, a.left - w - 8);
-  node.style.left = left + 'px';
-  node.style.top = Math.max(8, Math.min(a.top, window.innerHeight - node.offsetHeight - 8)) + 'px';
-}
-
-// A user's profile: drawn at once from what's known, filled in when Rust has fetched it.
+// A user's profile, full window as in Discord: drawn at once from what's known, filled in when
+// Rust has fetched it. anchor is kept for callers; the profile no longer sits beside it.
 function openProfile(u, anchor, guildId) {
   if (!u || !u.id) return;
-  // Where it was clicked, kept: a redraw meanwhile may take the clicked node away.
-  const rect = anchor.getBoundingClientRect();
-  anchor = { getBoundingClientRect: () => rect };
   const key = u.id + '|' + (guildId || '');
   const guild = guildId ? guildById(guildId) : null;
   const self = !!state.me && u.id === state.me.id;
@@ -1512,8 +1571,14 @@ function openProfile(u, anchor, guildId) {
   const ctx = () => ({
     me: state.me, guild, relationship: relationOf(u.id),
     status: self ? myDot(state.myStatus) : statusOf(u),
+    custom: customOf(u),
     md: { nameOf, openLink, formatTime, emojiUrl, roleOf: (id) => roleOf(guild, id), channelName: () => null },
-    guildName: (id) => { const g = guildById(id); return g && g.name; },
+    emojiUrl,
+    known: (id) => guildById(id),
+    guildIcon: (g) => guildIcon(g, 'profile-row-icon'),
+    openGuild: close2((id) => { const g = guildById(id); if (g) openGuild(g); }),
+    openUser: (f) => { remember(f); openProfile(f, null, null); },
+    close: closeLayer,
     message: close(() => api.openDm(u.id).then((channel) => select(channel)).catch((e) => showToast('Couldn’t open the DM: ' + e))),
     add: close(() => api.relationship(u.id, 'add').then(() => showToast('Friend request sent.')).catch((e) => showToast('Not sent: ' + e))),
     accept: close(() => api.relationship(u.id, 'accept').catch((e) => showToast('Not accepted: ' + e))),
@@ -1528,19 +1593,28 @@ function openProfile(u, anchor, guildId) {
     unblock: close(() => api.relationship(u.id, 'remove').catch((e) => showToast('Not unblocked: ' + e))),
     editStatus: close(() => showStatusMenu()),
   });
-  const show = (p) => popoutBeside(anchor, h('div', { class: 'popup profile-popout', role: 'dialog', 'aria-label': displayName(u), onclick: (e) => e.stopPropagation() }, profileCard(u, p, ctx())));
+  const build = (p) => h('div', { class: 'popup profile-popout profile-full', role: 'dialog', 'aria-modal': 'true', 'aria-label': displayName(u), onclick: (e) => e.stopPropagation() }, profileCard(u, p, ctx()));
   const known = profiles.get(key);
-  show(known || null);
+  let node = build(known || null);
+  showModal(node);
+  layer.classList.add('profile-layer');
   if (known) return;
-  const popout = layer.firstChild;
   api.userProfile(u.id, guildId).then((p) => {
     profiles.set(key, p);
     remember(p.user);
-    if (layer.firstChild === popout) show(p);
+    if (!layer.contains(node)) return;
+    const next = build(p);
+    node.replaceWith(next);
+    node = next;
   }).catch((e) => {
-    const note = layer.firstChild === popout && popout.querySelector('.profile-loading');
+    const note = layer.contains(node) && node.querySelector('.profile-loading');
     if (note) note.replaceChildren('Couldn’t load the profile: ' + e);
   });
+}
+
+// Closes the layer first, then runs fn with what it was given.
+function close2(fn) {
+  return (...args) => { closeLayer(); fn(...args); };
 }
 
 // The status menu, over the user panel.
@@ -1839,21 +1913,44 @@ function popupAt(anchor, node) {
   node.style.top = (above < 8 ? a.bottom + 8 : above) + 'px';
 }
 
-function toggleEmojiPicker() {
-  if (layer.querySelector('.emoji-picker')) { closeLayer(); return; }
-  emojiPicker(emojiButton, insert);
+// The composer's picker (picker.js): the GIFs or the Emoji tab; the button again closes it.
+function togglePicker(tab) {
+  const open = layer.querySelector('.lc-picker');
+  if (open && open.dataset.tab === tab) { closeLayer(); return; }
+  const conv = dmById(state.current);
+  if (!conv) return;
+  const node = createPicker(pickerOptions(conv, {
+    tab, gifs: !gifButton.hidden && !gifButton.disabled,
+    onEmoji: (p) => insert(p.text),
+    onGif: (g) => { closeLayer(); sendGif(conv, g); },
+  }));
+  node.dataset.tab = tab;
+  popupAt(emojiButton, node);
 }
 
-// The full picker: the composer's (stays open) and Discord reactions' (onPick closes it).
-function emojiPicker(anchor, onPick) {
-  const grid = h('div', { class: 'emoji-grid' });
-  const show = (category) => {
-    grid.textContent = '';
-    for (const e of category.emoji) grid.appendChild(h('button', { type: 'button', class: 'emoji-cell', onclick: (ev) => { ev.stopPropagation(); onPick(e); } }, e));
-  };
-  const tabs = h('div', { class: 'emoji-tabs' }, EMOJI_CATEGORIES.map((c) => h('button', { type: 'button', class: 'emoji-tab', title: c.name, onclick: (ev) => { ev.stopPropagation(); show(c); } }, c.icon)));
-  show(EMOJI_CATEGORIES[0]);
-  popupAt(anchor, h('div', { class: 'popup emoji-picker', onclick: (ev) => ev.stopPropagation() }, tabs, grid));
+// What the picker may offer here: a server's own emoji in that server (all servers' with Nitro),
+// never in a secret chat or a DM without Nitro; and the recently used ones.
+function pickerOptions(conv, more) {
+  const guild = conv && conv.guild_id ? guildById(conv.guild_id) : null;
+  const secretHere = !!conv && secret.canSend(conv.id);
+  return Object.assign({
+    guild, guilds: state.guilds.filter((g) => !g.unavailable), nitro: !!state.nitro,
+    customAllowed: !secretHere && (!!guild || !!state.nitro),
+    emojiUrl, recent: prefs.settings.recentEmoji || [],
+    remember: (p) => saveSettings({ recentEmoji: withRecent(prefs.settings.recentEmoji, p) }),
+  }, more);
+}
+
+// A GIF from the picker: its link, sent as its own message as Discord does (the draft stays);
+// a reply being written goes with it.
+function sendGif(conv, g) {
+  if (!conv || gifButton.disabled || state.composeMode === 'secret') return;
+  const reply = state.discordReply;
+  const plain = state.composeMode === 'e2e' && state.plainNext === conv.id;
+  if (plain) state.plainNext = null;
+  api.send(conv.id, g.url, reply && reply.m.id, reply ? reply.ping : true, null, plain).catch((e) => showToast('GIF not sent: ' + e));
+  state.discordReply = null;
+  refresh(true);
 }
 
 function insert(text) {
@@ -1955,7 +2052,7 @@ on('lc://session', (s) => {
   if (s.signedIn) { state.me = s.me; showConnecting(); }
   else {
     secret.shutdown();
-    Object.assign(state, { me: null, dms: [], current: null, view: 'friends', relationships: [], presences: new Map(), reads: new Map(), guilds: [], guildId: null, memberList: null });
+    Object.assign(state, { me: null, dms: [], current: null, view: 'friends', relationships: [], presences: new Map(), customs: new Map(), reads: new Map(), guilds: [], guildId: null, memberLists: new Map(), memberListsOf: null, memberSub: null, memberPresence: new Map() });
     showPane(friendsPane);
     state.messages.clear();
     state.olderDone.clear();
@@ -1969,6 +2066,8 @@ function takeReady(r) {
   state.dms = r.dms || [];
   state.relationships = r.relationships || [];
   state.presences = new Map(Object.entries(r.presences || {}));
+  state.customs = new Map(Object.entries(r.customs || {}));
+  state.nitro = !!r.nitro;
   state.reads = new Map(Object.entries(r.reads || {}));
   state.e2e = r.e2e || { contacts: [], problem: null };
   calls.load(r.voice);
@@ -2033,14 +2132,18 @@ on('lc://guild-removed', ({ id }) => {
   refresh();
 });
 on('lc://member-list', (update) => {
+  if (state.memberListsOf !== update.guild_id) return;
+  if (state.memberPresence.size > 20000) state.memberPresence.clear();
+  for (const m of membersIn(update)) state.memberPresence.set(m.user.id, { status: (m.presence && m.presence.status) || 'offline', custom: customStatus(m.presence) });
+  state.memberLists.set(update.id, applyMemberList(state.memberLists.get(update.id) || null, update));
   const conv = dmById(state.current);
-  if (!conv || conv.guild_id !== update.guild_id || conv.member_list !== update.id) return;
-  const list = applyMemberList(state.memberList && state.memberList.channel === conv.id ? state.memberList : null, update);
-  list.channel = conv.id;
-  state.memberList = list;
+  if (conv && conv.guild_id === update.guild_id && conv.member_list === update.id) refresh();
+});
+on('lc://presence', ({ id, status, custom }) => {
+  state.presences.set(id, status);
+  if (custom) state.customs.set(id, custom); else state.customs.delete(id);
   refresh();
 });
-on('lc://presence', ({ id, status }) => { state.presences.set(id, status); refresh(); });
 on('lc://read', ({ id, read }) => { state.reads.set(id, read); refresh(); });
 on('lc://gateway', (g) => { state.gateway = g.status; refresh(); });
 on('lc://event', ({ t, d }) => {
@@ -2058,6 +2161,12 @@ on('lc://event', ({ t, d }) => {
     if (list && !state.detached.has(id) && !list.some((m) => m.id === d.id)) list.push(d);
     const typing = state.typing.get(id);
     if (typing && d.author) typing.delete(d.author.id);
+    // Discord's clock against this one, from a message just written here: secret-chat lines and
+    // messages carry local times and are put among Discord's by it.
+    if (d.author && state.me && d.author.id === state.me.id) {
+      const skew = (Date.parse(d.timestamp) || 0) - Date.now();
+      if (Math.abs(skew) < 3600000) state.clockSkew = skew;
+    }
     // A secret-chat invite is only ever taken from the other person in a 1:1 DM.
     const peer = peerOf(dm);
     if (peer) secret.consider(id, d, state.me, peer);
