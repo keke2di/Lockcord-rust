@@ -2125,3 +2125,48 @@ button.member { width: 100%; border: 0; background: none; font: inherit; text-al
 
 /* The Themes page: room between the preview and the first section. */
 .settings-preview { margin-bottom: 24px; }
+
+/* --- Icons, buttons and pings follow the theme ------------------------------------------------------
+   Every icon button (composer, header, user panel, title bar, settings, picker, channel list) takes
+   the scheme's accent: tinted at rest, the accent itself on hover and when selected or on. A theme
+   (css/skins/*.css) restyles these on top, keeping its own look; colours come from these tokens. */
+:root {
+    --lc-icon: color-mix(in srgb, var(--lc-brand) 45%, var(--lc-interactive));
+    --lc-icon-hover: var(--lc-brand);
+    --lc-icon-active: var(--lc-brand);
+    --lc-icon-tint: color-mix(in srgb, var(--lc-brand) 14%, transparent);
+    /* Pings: the row, its bar and the @mention pill, in the accent. */
+    --lc-mention-row: color-mix(in srgb, var(--lc-brand) 11%, transparent);
+    --lc-mention-row-hover: color-mix(in srgb, var(--lc-brand) 16%, transparent);
+    --lc-mention-bar: var(--lc-brand);
+    --lc-mention-text: color-mix(in srgb, var(--lc-brand) 65%, var(--lc-header));
+}
+
+.composer-button, .header-button, .panel-button, .titlebar-button, .gif-back, .emoji-rail-button, .picker-tab,
+.settings-nav-item .lc-icon, .channel-glyph, .header-hash, .ac-glyph, .header-parent .lc-icon, .menu-item .lc-icon { color: var(--lc-icon); }
+.composer-button:hover:not(:disabled), .header-button:hover:not(:disabled), .panel-button:hover, .titlebar-button:hover,
+.gif-back:hover, .emoji-rail-button:hover, .picker-tab:hover, .settings-nav-item:hover .lc-icon, .menu-item:hover .lc-icon { color: var(--lc-icon-hover); }
+.titlebar-button.close:hover { color: #fff; }
+.panel-button.on, .header-button.on { color: var(--lc-icon-active); background: var(--lc-icon-tint); }
+.picker-tab[aria-selected="true"] { color: var(--lc-icon-active); background: var(--lc-icon-tint); }
+.settings-nav-item.selected .lc-icon { color: var(--lc-icon-active); }
+.settings-nav-item.selected { box-shadow: inset 3px 0 0 var(--lc-brand); }
+.gif-back:hover, .emoji-rail-button:hover { background: var(--lc-icon-tint); }
+
+/* Channel icons: drawn as SVG (servers.js channelIcon), tinted; brighter when unread, the accent when open. */
+.channel-glyph { display: flex; align-items: center; justify-content: center; font-size: inherit; opacity: 1; }
+.channel.unread .channel-glyph { color: var(--lc-header); }
+.channel.selected .channel-glyph { color: var(--lc-icon-active); }
+.channel:hover .channel-glyph { color: var(--lc-icon-hover); }
+.header-hash { display: inline-flex; align-items: center; font-size: inherit; }
+.header-parent { display: inline-flex; align-items: center; gap: 2px; }
+.ac-glyph { display: flex; align-items: center; justify-content: center; }
+
+/* Pings in the theme's accent. */
+.md-mention { background: var(--lc-mention); color: var(--lc-mention-text); }
+.md-mention:hover { background: var(--lc-brand); color: var(--lc-on-accent); }
+
+/* A GIF whose preview won't load (an expired or removed link): said, not left blank. */
+.gif-tile.gif-dead { display: flex; align-items: center; justify-content: center; min-height: 60px; cursor: default; }
+.gif-tile.gif-dead::after { content: 'Unavailable'; color: var(--lc-muted); font-size: 0.75rem; font-weight: 600; }
+.gif-tile img.gif-video { display: block; width: 100%; height: 100%; object-fit: cover; }

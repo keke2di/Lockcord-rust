@@ -50,7 +50,7 @@ html, body, .app, .app > :is(.rail, .sidebar, .chat, .member-panel), .user-panel
 body { font-weight: 500; }
 .sidebar-title, .channel-category, .members-title, .timestamp, .gutter-time, .control-description, .dm-sub { color: var(--lc-muted); font-weight: 600; }
 .md-link, a { color: var(--lc-link) !important; text-decoration: underline !important; text-underline-offset: 2px; }
-.md-mention { background: var(--lc-brand); color: var(--lc-on-accent); border-radius: 2px; font-weight: 700; }
+.md-mention { background: var(--lc-brand); color: var(--lc-on-accent) !important; border-radius: 2px; font-weight: 700; }
 .md-code, .md-pre { background: #000; border: 2px solid var(--lc-header); color: var(--lc-header); }
 
 /* Lists: the selected item in the accent, black text; hover outlined. */

@@ -7,7 +7,7 @@ import { formatTime, h, icon, ICONS, snowflakeTime } from './dom.js';
 import { REACTIONS, replaceShortcodes } from './emoji.js';
 import { createPicker, withRecent } from './picker.js';
 import { avatarWithStatus, displayName, nameOf, remember, user } from './people.js';
-import { applyMemberList, colorFor, customStatus, firstChannel, guildIcon, membersIn, rangesFor, renderChannels, renderMembers, renderRail, roleOf, rowsInView, TEXT_TYPES } from './servers.js';
+import { applyMemberList, channelIcon, colorFor, customStatus, firstChannel, guildIcon, membersIn, rangesFor, renderChannels, renderMembers, renderRail, roleOf, rowsInView, TEXT_TYPES } from './servers.js';
 import { removeWords, renderFriends, STATUS_TEXT } from './friends.js';
 import { createSecret } from './secret.js';
 import { applyDisplay, applyTheme, currentTheme, preset } from './theme.js';
@@ -58,7 +58,8 @@ const state = {
   muted: { guilds: new Set(), channels: new Set() },
   memberLists: new Map(),// the open server's member lists by list id (servers.js applyMemberList)
   memberListsOf: null,   // the server those lists are from
-  memberSub: null,       // { guild, channel, ranges }: the op 37 last sent
+  memberSub: null,       // { guild, channel, ranges, awaiting }: the op 37 last sent
+  listFor: new Map(),    // channel id -> the member list id Discord answered its op 37 with
   memberPresence: new Map(), // user id -> { status, custom }: server members seen in a member list
   showMemberList: true,
   sidePinned: false,     // the side panel kept open in place, instead of sliding out on hover
@@ -88,7 +89,7 @@ const calls = createCalls({
   modal: (node) => showModal(node),
   closeLayer: () => closeLayer(),
   voiceSettings: () => (prefs.settings && prefs.settings.voice) || {},
-  channelName: (id) => { const c = dmById(id); return c ? (c.guild_id ? '🔊 ' + (c.name || 'voice') : dmName(c)) : 'a call'; },
+  channelName: (id) => { const c = dmById(id); return c ? (c.guild_id ? (c.name || 'voice') : dmName(c)) : 'a call'; },
 });
 
 // --- Layout ----------------------------------------------------------------------------------
@@ -473,9 +474,11 @@ async function select(id) {
     // Lists are kept per server: channels that share a list (most do) show it at once, as
     // Discord sends no new SYNC for a list already subscribed to.
     const sub = conv.thread && conv.parent_id ? conv.parent_id : id;
-    if (state.memberListsOf !== conv.guild_id) { state.memberLists = new Map(); state.memberListsOf = conv.guild_id; }
-    if (!state.memberSub || state.memberSub.channel !== sub) memberPanel.scrollTop = 0;
-    state.memberSub = { guild: conv.guild_id, channel: sub, ranges: rangesFor(null) };
+    if (state.memberListsOf !== conv.guild_id) { state.memberLists = new Map(); state.memberListsOf = conv.guild_id; state.listFor = new Map(); }
+    const switched = !state.memberSub || state.memberSub.channel !== sub;
+    if (switched) memberPanel.scrollTop = 0;
+    // The first full list (SYNC from row 0) after asking is this channel's, whatever its id.
+    state.memberSub = { guild: conv.guild_id, channel: sub, ranges: rangesFor(null), awaiting: switched ? true : !!(state.memberSub && state.memberSub.awaiting) };
     api.subscribe(conv.guild_id, sub).catch((e) => console.warn('subscribe', e));
   }
   textarea.value = '';
@@ -746,14 +749,14 @@ function drawHeader(dm) {
     const parent = parentOf(dm);
     if (dm.thread) {
       header.appendChild(h('div', { class: 'header-name' },
-        parent ? h('button', { type: 'button', class: 'header-parent', title: 'Back to #' + parent.name, onclick: () => select(parent.id) }, (FORUM_TYPES.has(parent.type) ? '💬 ' : '# ') + parent.name) : null,
+        parent ? h('button', { type: 'button', class: 'header-parent', title: 'Back to #' + parent.name, onclick: () => select(parent.id) }, channelIcon(parent.type, 16), parent.name) : null,
         parent ? icon(ICONS.chevronRight, 16) : null,
         icon(ICONS.thread, 20), h('span', null, dm.name || ''),
         dm.archived ? h('span', { class: 'header-topic' }, 'Archived') : null));
       header.appendChild(h('button', { type: 'button', class: 'header-text-button', onclick: () => api.threadJoin(dm.id, !dm.joined).then(() => { dm.joined = !dm.joined; refresh(); }).catch((e) => showToast(String(e))) },
         dm.joined ? 'Leave Thread' : 'Join Thread'));
     } else {
-      header.appendChild(h('div', { class: 'header-name' }, h('span', { class: 'header-hash', 'aria-hidden': 'true' }, dm.type === 5 ? '📢' : '#'), h('span', null, dm.name || ''),
+      header.appendChild(h('div', { class: 'header-name' }, h('span', { class: 'header-hash', 'aria-hidden': 'true' }, channelIcon(dm.type, 24)), h('span', null, dm.name || ''),
         dm.topic ? h('span', { class: 'header-topic', title: dm.topic }, dm.topic) : null));
       header.appendChild(h('button', { type: 'button', class: 'header-button', title: 'Threads', 'aria-label': 'Threads', onclick: (e) => { e.stopPropagation(); showThreads(dm, e.currentTarget); } }, icon(ICONS.thread, 22)));
     }
@@ -1321,7 +1324,7 @@ function draw(toEnd) {
   const searching = !!state.search && state.search.scope === searchScope(dm);
   const members = !!dm.guild_id && state.showMemberList && !dm.thread && !searching;
   memberPanel.hidden = !members;
-  if (members) renderMembers(memberPanel, guildById(dm.guild_id), state.memberListsOf === dm.guild_id ? state.memberLists.get(dm.member_list) || null : null, (u, anchor) => openProfile(u, anchor, dm.guild_id));
+  if (members) renderMembers(memberPanel, guildById(dm.guild_id), state.memberListsOf === dm.guild_id ? memberListOf(dm) : null, (u, anchor) => openProfile(u, anchor, dm.guild_id));
   searchPanel.hidden = !searching;
   if (searching) drawSearch(dm);
   if (keepTop) { keepTop = false; scroller.scrollTop = top; }
@@ -1822,7 +1825,7 @@ function closeSearch() {
 function drawSearch(conv) {
   renderResults(searchPanel, state.search, {
     md: mdFor(conv),
-    channelName: (id) => { const c = dmById(id); return c && c.guild_id ? (c.thread ? '🧵 ' : '#') + c.name : null; },
+    channelName: (id) => { const c = dmById(id); return c && c.guild_id ? '#' + c.name : null; },
     open: (m) => goToMessage(m.channel_id, m.id),
     more: () => runSearch(state.search.text, true),
     close: closeSearch,
@@ -2052,7 +2055,7 @@ on('lc://session', (s) => {
   if (s.signedIn) { state.me = s.me; showConnecting(); }
   else {
     secret.shutdown();
-    Object.assign(state, { me: null, dms: [], current: null, view: 'friends', relationships: [], presences: new Map(), customs: new Map(), reads: new Map(), guilds: [], guildId: null, memberLists: new Map(), memberListsOf: null, memberSub: null, memberPresence: new Map() });
+    Object.assign(state, { me: null, dms: [], current: null, view: 'friends', relationships: [], presences: new Map(), customs: new Map(), reads: new Map(), guilds: [], guildId: null, memberLists: new Map(), memberListsOf: null, memberSub: null, listFor: new Map(), memberPresence: new Map() });
     showPane(friendsPane);
     state.messages.clear();
     state.olderDone.clear();
@@ -2131,13 +2134,27 @@ on('lc://guild-removed', ({ id }) => {
   if (state.guildId === id) showFriends();
   refresh();
 });
+// A channel's member list: the one its permissions name (guilds.rs member_list_id), else the one
+// Discord answered its op 37 with (when that id is worked out differently), else nothing yet.
+function memberListOf(conv) {
+  const sub = conv.thread && conv.parent_id ? conv.parent_id : conv.id;
+  const answered = state.listFor.get(sub);
+  return state.memberLists.get(conv.member_list) || (answered && state.memberLists.get(answered)) || null;
+}
+
 on('lc://member-list', (update) => {
   if (state.memberListsOf !== update.guild_id) return;
+  const sub = state.memberSub;
+  if (sub && sub.awaiting && sub.guild === update.guild_id && (update.ops || []).some((o) => o.op === 'SYNC' && o.range && o.range[0] === 0)) {
+    state.listFor.set(sub.channel, update.id);
+    sub.awaiting = false;
+  }
   if (state.memberPresence.size > 20000) state.memberPresence.clear();
   for (const m of membersIn(update)) state.memberPresence.set(m.user.id, { status: (m.presence && m.presence.status) || 'offline', custom: customStatus(m.presence) });
   state.memberLists.set(update.id, applyMemberList(state.memberLists.get(update.id) || null, update));
   const conv = dmById(state.current);
-  if (conv && conv.guild_id === update.guild_id && conv.member_list === update.id) refresh();
+  const convSub = conv && (conv.thread && conv.parent_id ? conv.parent_id : conv.id);
+  if (conv && conv.guild_id === update.guild_id && (conv.member_list === update.id || state.listFor.get(convSub) === update.id)) refresh();
 });
 on('lc://presence', ({ id, status, custom }) => {
   state.presences.set(id, status);

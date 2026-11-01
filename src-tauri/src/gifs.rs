@@ -31,11 +31,25 @@ fn preview(v: &Value) -> Option<&str> {
     v.as_str().filter(|u| media::allowed(u).is_some())
 }
 
-/// One GIF as the picker takes it: the link to send, a preview and its size.
+// Whether a preview is a video (mp4/webm, drawn as a looping <video>) or a picture (GIF, PNG, WebP:
+// an <img>): a favourite says so (FavoriteGIF format: 1 image, 2 video), anything else by its file.
+fn kind(src: &str, format: Option<u64>) -> &'static str {
+    match format {
+        Some(1) => "image",
+        Some(2) => "video",
+        _ => {
+            let path = src.split(['?', '#']).next().unwrap_or("").to_ascii_lowercase();
+            if path.ends_with(".mp4") || path.ends_with(".webm") { "video" } else { "image" }
+        }
+    }
+}
+
+/// One GIF as the picker takes it: the link to send, a preview, its kind and its size.
 pub fn gif_view(g: &Value) -> Option<Value> {
     let url = g["url"].as_str().filter(|u| u.starts_with("https://") && u.len() <= 512 && !u.contains(char::is_whitespace))?;
     let src = preview(&g["src"]).or_else(|| preview(&g["gif_src"]))?;
-    Some(json!({ "url": url, "src": src, "width": g["width"].as_u64().unwrap_or(0), "height": g["height"].as_u64().unwrap_or(0) }))
+    let kind = kind(src, g["format"].as_u64().filter(|f| *f == 1 || *f == 2));
+    Some(json!({ "url": url, "src": src, "kind": kind, "width": g["width"].as_u64().unwrap_or(0), "height": g["height"].as_u64().unwrap_or(0) }))
 }
 
 /// A search's (or trending GIFs') answer: a list of GIFs.
@@ -54,7 +68,7 @@ pub fn trending_view(body: &Value) -> Value {
 
 /// The favourite GIFs in a frecency settings protobuf (base64), the latest favourite first:
 /// FavoriteGIFs is field 2, its map field 1; an entry's key (1) is the link and its value (2) a
-/// FavoriteGIF (src 2, width 3, height 4, order 5).
+/// FavoriteGIF (format 1, src 2, width 3, height 4, order 5).
 pub fn favorites(encoded: &str) -> Value {
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) else { return json!([]) };
     let Some(favs) = people::len_field(&bytes, 2) else { return json!([]) };
@@ -68,7 +82,7 @@ pub fn favorites(encoded: &str) -> Value {
         let Some(gif) = people::len_field(entry, 2) else { continue };
         let src = people::len_field(gif, 2).and_then(|s| std::str::from_utf8(s).ok()).unwrap_or("");
         let view = gif_view(&json!({
-            "url": url, "src": src,
+            "url": url, "src": src, "format": people::varint_field(gif, 1),
             "width": people::varint_field(gif, 3).unwrap_or(0), "height": people::varint_field(gif, 4).unwrap_or(0),
         }));
         if let Some(view) = view {
@@ -100,8 +114,11 @@ mod tests {
         varint(out, value);
     }
     fn entry(url: &str, src: &str, order: u64) -> Vec<u8> {
+        entry_as(url, src, order, 2)
+    }
+    fn entry_as(url: &str, src: &str, order: u64, format: u64) -> Vec<u8> {
         let mut gif = Vec::new();
-        num(&mut gif, 1, 2);
+        num(&mut gif, 1, format);
         len(&mut gif, 2, src.as_bytes());
         num(&mut gif, 3, 220);
         num(&mut gif, 4, 124);
@@ -119,13 +136,16 @@ mod tests {
         len(&mut favs, 1, &entry("https://tenor.com/view/new-456", "https://media.tenor.com/b/new.mp4", 7));
         // A preview from anywhere else isn't loaded, so that favourite isn't offered.
         len(&mut favs, 1, &entry("https://example.com/x.gif", "https://example.com/x.gif", 9));
+        // A picture favourite (format 1) is drawn as one, not as a video.
+        len(&mut favs, 1, &entry_as("https://cdn.discordapp.com/attachments/1/2/cat.gif", "https://media.discordapp.net/attachments/1/2/cat.gif", 3, 1));
         let mut settings = Vec::new();
         len(&mut settings, 1, &[8, 1]);
         len(&mut settings, 2, &favs);
         let v = favorites(&base64::engine::general_purpose::STANDARD.encode(&settings));
-        assert_eq!(v.as_array().unwrap().len(), 2);
-        assert_eq!(v[0], json!({ "url": "https://tenor.com/view/new-456", "src": "https://media.tenor.com/b/new.mp4", "width": 220, "height": 124 }));
-        assert_eq!(v[1]["url"], "https://tenor.com/view/old-123");
+        assert_eq!(v.as_array().unwrap().len(), 3);
+        assert_eq!(v[0], json!({ "url": "https://tenor.com/view/new-456", "src": "https://media.tenor.com/b/new.mp4", "kind": "video", "width": 220, "height": 124 }));
+        assert_eq!(v[1]["kind"], "image");
+        assert_eq!(v[2]["url"], "https://tenor.com/view/old-123");
         assert_eq!(favorites("not base64!"), json!([]));
         assert_eq!(favorites(""), json!([]));
     }
@@ -137,7 +157,9 @@ mod tests {
             { "url": "javascript:alert(1)", "src": "https://media.tenor.com/x/b.mp4" },
             { "url": "https://tenor.com/view/c-3", "src": "https://evil.example/c.mp4" },
         ]);
-        assert_eq!(gifs_view(&body), json!([{ "url": "https://tenor.com/view/a-1", "src": "https://media.tenor.com/x/a.mp4", "width": 498, "height": 280 }]));
+        assert_eq!(gifs_view(&body), json!([{ "url": "https://tenor.com/view/a-1", "src": "https://media.tenor.com/x/a.mp4", "kind": "video", "width": 498, "height": 280 }]));
+        assert_eq!(kind("https://media.tenor.com/x/a.gif?x=1", None), "image");
+        assert_eq!(kind("https://media.tenor.com/x/a.WEBM", None), "video");
         let trending = json!({ "categories": [{ "name": "happy", "src": "https://media.tenor.com/h.mp4" }, { "name": "", "src": "https://media.tenor.com/e.mp4" }], "gifs": [{ "src": "https://media.tenor.com/t.mp4" }] });
         assert_eq!(trending_view(&trending), json!({ "categories": [{ "name": "happy", "src": "https://media.tenor.com/h.mp4" }], "preview": "https://media.tenor.com/t.mp4" }));
         assert_eq!(query(Some("cat & dog"), "en-US"), "q=cat+%26+dog&media_format=mp4&provider=tenor&locale=en-US&limit=50");

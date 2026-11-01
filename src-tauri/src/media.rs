@@ -97,6 +97,17 @@ impl Cache {
 }
 
 pub async fn fetch(http: &reqwest::Client, cache: &std::sync::Mutex<Cache>, raw: &str) -> Result<(&'static str, Arc<Vec<u8>>), String> {
+    let result = fetch_inner(http, cache, raw).await;
+    // Debug builds say why a picture didn't load: host and path (no query string), and why.
+    #[cfg(debug_assertions)]
+    if let Err(e) = &result {
+        let at = Url::parse(raw).map(|u| format!("{}{}", u.host_str().unwrap_or("?"), u.path())).unwrap_or_else(|_| "bad url".into());
+        eprintln!("[media] {at}: {e}");
+    }
+    result
+}
+
+async fn fetch_inner(http: &reqwest::Client, cache: &std::sync::Mutex<Cache>, raw: &str) -> Result<(&'static str, Arc<Vec<u8>>), String> {
     let url = allowed(raw).ok_or("not Discord media")?;
     if let Some(hit) = cache.lock().unwrap().get(url.as_str()) {
         return Ok(hit);
@@ -110,9 +121,15 @@ pub async fn fetch(http: &reqwest::Client, cache: &std::sync::Mutex<Cache>, raw:
         .await
         .map_err(|e| e.without_url().to_string())?;
     if !response.status().is_success() {
-        return Err(format!("media {}", response.status()));
+        // A redirect the client wouldn't follow says where it pointed (its host only).
+        let to = response.headers().get("location").and_then(|v| v.to_str().ok()).and_then(|l| Url::parse(l).ok()).and_then(|u| u.host_str().map(str::to_owned));
+        return Err(match to {
+            Some(host) => format!("media {} to {host}", response.status()),
+            None => format!("media {}", response.status()),
+        });
     }
-    let kind = media_type(response.headers().get("content-type").and_then(|v| v.to_str().ok())).ok_or("not an image")?;
+    let header = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_owned();
+    let kind = media_type(Some(&header)).ok_or_else(|| format!("not an image ({header})"))?;
     if response.content_length().is_some_and(|n| n as usize > MAX_BYTES) {
         return Err("too large".into());
     }

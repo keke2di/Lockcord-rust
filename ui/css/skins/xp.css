@@ -28,8 +28,9 @@
     --lc-xp-pane-b: #6375d6;
     --lc-xp-select: #316ac5;
     --lc-xp-start: #3c8d0d;
-    --lc-xp-face: var(--lc-xp-face);
-    --lc-xp-pane-text: var(--lc-xp-pane-text);
+    --lc-xp-face: #ece9d8;
+    --lc-xp-pane-text: #215dc6;
+    --lc-xp-nav-text: #fff;
 }
 
 /* The window frame and its title bar. */
@@ -43,19 +44,19 @@ html, body { background: var(--lc-xp-frame); }
 .titlebar-buttons { gap: 2px; padding-right: 4px; align-items: center; }
 .titlebar-button {
     width: 22px; height: 22px; border-radius: 3px; border: 1px solid #fff; color: #fff;
-    background: radial-gradient(circle at 30% 30%, #6fa5ff 0%, #2a63e6 60%, #1d4fc7 100%);
+    background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--lc-xp-title-b) 65%, #fff) 0%, var(--lc-xp-title-a) 60%, var(--lc-xp-title-c) 100%);
     box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.3);
 }
-.titlebar-button:hover { background: radial-gradient(circle at 30% 30%, #8cbaff 0%, #3a74f0 60%, #2a5fd8 100%); color: #fff; }
+.titlebar-button:hover { background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--lc-xp-title-b) 45%, #fff) 0%, var(--lc-xp-title-b) 60%, var(--lc-xp-title-a) 100%); color: #fff; }
 .titlebar-button.close { background: radial-gradient(circle at 30% 30%, #f0a28c 0%, #e0482e 55%, #c0301a 100%); }
 .titlebar-button.close:hover { background: radial-gradient(circle at 30% 30%, #ffb9a3 0%, #ee5a3f 55%, #d0402a 100%); }
 .titlebar-button svg { width: 9px; height: 9px; filter: drop-shadow(0 0 0.5px #fff); }
 .app { background: var(--lc-chat-bg); border-left: 3px solid var(--lc-xp-frame); border-right: 3px solid var(--lc-xp-frame); border-bottom: 3px solid var(--lc-xp-frame); }
 
 /* The rail as XP's dark-blue taskbar strip, the side panel as the blue task pane. */
-.app > .rail { background: linear-gradient(90deg, #1941a5, #245edb 40%, #3f8cf3 100%); }
-.rail-button { border-radius: 4px; background: linear-gradient(180deg, #3c81f3, #2a62d4); color: #fff; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), 1px 1px 0 rgba(0, 0, 0, 0.3); }
-.rail-item.selected .rail-button { background: linear-gradient(180deg, #1e4cb8, #163d9c); box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5); }
+.app > .rail { background: linear-gradient(90deg, var(--lc-xp-title-c), var(--lc-xp-title-a) 40%, var(--lc-xp-title-b) 100%); }
+.rail-button { border-radius: 4px; background: linear-gradient(180deg, var(--lc-xp-title-b), var(--lc-xp-title-a)); color: #fff; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), 1px 1px 0 rgba(0, 0, 0, 0.3); }
+.rail-item.selected .rail-button { background: linear-gradient(180deg, var(--lc-xp-title-c), color-mix(in srgb, var(--lc-xp-title-c) 75%, #000)); box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5); }
 .app > .sidebar { background: linear-gradient(180deg, var(--lc-xp-pane-a), var(--lc-xp-pane-b)); border-right: 1px solid var(--lc-hairline); }
 .sidebar-title, .channel-category, .guild-title {
     margin: 10px 8px 0; padding: 4px 8px; border-radius: 6px 6px 0 0; color: #fff; font-weight: bold; font-size: 12px; text-transform: none; letter-spacing: 0;
@@ -63,10 +64,10 @@ html, body { background: var(--lc-xp-frame); }
 }
 .dm-list, .channel-list { margin: 0 8px; background: var(--lc-sidebar); border: 1px solid var(--lc-chat-bg); border-top: 0; padding: 4px; }
 .dm, .channel { color: var(--lc-xp-pane-text); font-size: 13px; height: 28px; }
-.dm:hover:not(.selected), .channel:hover:not(.selected) { background: none; color: #428eff; text-decoration: underline; }
+.dm:hover:not(.selected), .channel:hover:not(.selected) { background: none; color: var(--lc-link); text-decoration: underline; }
 .dm.selected, .channel.selected { background: var(--lc-xp-select); color: #fff; box-shadow: none; }
 .dm-avatar { width: 22px; height: 22px; border-radius: 2px; }
-.user-panel { background: linear-gradient(180deg, #3168d5, #1941a5); border-top: 1px solid #0b2f8f; color: #fff; }
+.user-panel { background: linear-gradient(180deg, var(--lc-xp-title-a), var(--lc-xp-title-c)); border-top: 1px solid color-mix(in srgb, var(--lc-xp-title-c) 70%, #000); color: #fff; }
 .user-panel .panel-name { color: #fff; }
 .user-panel .panel-button { color: #fff; }
 
@@ -113,7 +114,8 @@ html, body { background: var(--lc-xp-frame); }
 /* Settings as an XP control panel: the task pane on the left. */
 .settings-screen { background: var(--lc-xp-face); inset: var(--lc-titlebar-height) 3px 3px 3px; }
 .settings-nav { background: linear-gradient(180deg, var(--lc-xp-pane-a), var(--lc-xp-pane-b)); }
-.settings-nav-item { color: #fff; }
+.settings-nav-item { color: var(--lc-xp-nav-text); }
+.settings-nav-item .lc-icon, .settings-nav-item:hover .lc-icon { color: inherit; }
 .settings-nav-item.selected { background: var(--lc-xp-select); color: #fff; }
 .settings-main { background: var(--lc-chat-bg); }
 .section-title { color: var(--lc-xp-pane-text); font: bold 15px Tahoma, sans-serif; }
@@ -122,7 +124,7 @@ html, body { background: var(--lc-xp-frame); }
 /* Scrollbars: XP's light blue. */
 ::-webkit-scrollbar { width: 16px; }
 ::-webkit-scrollbar-track { background: var(--lc-xp-face); }
-::-webkit-scrollbar-thumb, :hover::-webkit-scrollbar-thumb { background: linear-gradient(90deg, #c8d6fb, #b7caf5); border: 1px solid #fff; border-radius: 2px; box-shadow: inset 0 0 0 1px #9eb6e8; }
+::-webkit-scrollbar-thumb, :hover::-webkit-scrollbar-thumb { background: linear-gradient(90deg, color-mix(in srgb, var(--lc-xp-pane-a) 35%, var(--lc-chat-bg)), color-mix(in srgb, var(--lc-xp-pane-a) 50%, var(--lc-chat-bg))); border: 1px solid var(--lc-chat-bg); border-radius: 2px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc-xp-pane-a) 70%, var(--lc-chat-bg)); }
 * { scrollbar-color: auto; }
 
 /* --- Motion, icons and the rest of the window --------------------------------------------------- */
@@ -164,7 +166,7 @@ svg.lc-icon { filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.28)); }
 /* Messages and their parts. */
 .reaction { border-radius: 3px; background: linear-gradient(180deg, color-mix(in srgb, var(--lc-xp-face) 25%, var(--lc-chat-bg)) 0%, var(--lc-xp-face) 85%, color-mix(in srgb, var(--lc-xp-face) 85%, #000) 100%); border: 1px solid #b5b5a8; }
 .embed { background: var(--lc-chat-bg); border: 1px solid #919b9c; border-left: 4px solid var(--lc-xp-select); border-radius: 0; color: var(--lc-text); }
-.md-mention { background: #ffffe1; color: #0033cc; border: 1px dotted #0033cc; border-radius: 0; }
+.md-mention { background: color-mix(in srgb, var(--lc-link) 12%, var(--lc-chat-bg)); color: var(--lc-link); border: 1px dotted var(--lc-link); border-radius: 0; }
 .md-link { color: var(--lc-link); text-decoration: underline; }
 .md-code, .md-pre { font-family: 'Lucida Console', Consolas, monospace; background: var(--lc-code-bg); border: 1px solid #919b9c; border-radius: 0; }
 .reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: var(--lc-chat-bg); border: 1px solid #919b9c; border-radius: 0; color: var(--lc-text); }

@@ -200,13 +200,41 @@ function gifPane(opts) {
   let timer = null;
   let asked = 0;
 
-  const video = (src) => {
-    const v = h('video', { class: 'gif-video', src: media(src), loop: true, autoplay: true, playsInline: true, preload: 'auto' });
+  // Previews load only near the view and pause out of it (favourites can be hundreds). A video
+  // that won't play is tried once as a picture; one that won't load either says so.
+  const near = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const tile = e.target;
+      if (e.isIntersecting && tile.lcLoad) { tile.lcLoad(); tile.lcLoad = null; }
+      const v = tile.querySelector('video');
+      if (v && v.src) { if (e.isIntersecting) v.play().catch(() => {}); else v.pause(); }
+    }
+  }, { root: area, rootMargin: '300px 0px' });
+  const picture = (tile, src) => {
+    const img = h('img', { class: 'gif-video', alt: '', draggable: false, decoding: 'async' });
+    img.addEventListener('error', () => { img.remove(); tile.classList.add('gif-dead'); tile.title = 'This GIF isn’t available any more'; }, { once: true });
+    img.src = media(src);
+    tile.prepend(img);
+  };
+  const video = (tile, src) => {
+    const v = h('video', { class: 'gif-video', loop: true, autoplay: true, playsInline: true, preload: 'auto' });
     v.muted = true;
     v.defaultMuted = true;
-    return v;
+    v.addEventListener('error', () => { v.remove(); picture(tile, src); }, { once: true });
+    v.src = media(src);
+    tile.prepend(v);
   };
-  const message = (text) => { area.textContent = ''; area.appendChild(h('div', { class: 'picker-empty' }, text)); };
+  // Gives a tile its preview once it comes near the view.
+  const preview = (tile, src, kind) => {
+    if (!src) return tile;
+    const isVideo = (kind || (/\.(mp4|webm)(?:[?#]|$)/i.test(src) ? 'video' : 'image')) === 'video';
+    tile.lcLoad = () => (isVideo ? video(tile, src) : picture(tile, src));
+    near.observe(tile);
+    return tile;
+  };
+  // Emptied before each view: the tiles it held aren't watched any more.
+  const clear = () => { near.disconnect(); area.textContent = ''; };
+  const message = (text) => { clear(); area.appendChild(h('div', { class: 'picker-empty' }, text)); };
 
   // A list of GIFs in two columns, each in its own aspect.
   const showList = (title, load) => {
@@ -219,7 +247,7 @@ function gifPane(opts) {
     const mine = ++asked;
     load().then((gifs) => {
       if (mine !== asked) return;
-      area.textContent = '';
+      clear();
       if (!gifs.length) { message('No GIFs found.'); return; }
       const cols = [h('div', { class: 'gif-col' }), h('div', { class: 'gif-col' })];
       const heights = [0, 0];
@@ -227,7 +255,7 @@ function gifPane(opts) {
         const ratio = g.width && g.height ? g.height / g.width : 0.6;
         const col = heights[0] <= heights[1] ? 0 : 1;
         heights[col] += ratio;
-        const tile = h('button', { type: 'button', class: 'gif-tile', title: 'Send', onclick: (e) => { e.stopPropagation(); opts.onGif(g); } }, video(g.src));
+        const tile = preview(h('button', { type: 'button', class: 'gif-tile', title: 'Send', onclick: (e) => { e.stopPropagation(); opts.onGif(g); } }), g.src, g.kind);
         tile.style.aspectRatio = (g.width || 5) + ' / ' + (g.height || 3);
         cols[col].appendChild(tile);
       }
@@ -243,13 +271,13 @@ function gifPane(opts) {
     const favs = favorites ? Promise.resolve(favorites) : api.gifFavorites().then((f) => (favorites = f)).catch(() => []);
     Promise.all([favs, api.gifTrending()]).then(([fav, trending]) => {
       if (mine !== asked) return;
-      area.textContent = '';
+      clear();
       const tiles = h('div', { class: 'gif-categories' });
-      const tile = (label, src, glyph, open) => tiles.appendChild(h('button', { type: 'button', class: 'gif-category', onclick: (e) => { e.stopPropagation(); open(); } },
-        src ? video(src) : null, h('span', { class: 'gif-category-label' }, glyph ? icon(glyph, 16) : null, label)));
-      if (fav.length) tile('Favorites', fav[0].src, ICONS.star, () => showList('Favorites', () => Promise.resolve(fav)));
-      tile('Trending GIFs', trending.preview, null, () => showList('Trending GIFs', () => api.gifSearch(null)));
-      for (const c of trending.categories || []) tile(c.name, c.src, null, () => { showList(c.name, () => api.gifSearch(c.name)); });
+      const tile = (label, src, kind, glyph, open) => tiles.appendChild(preview(h('button', { type: 'button', class: 'gif-category', onclick: (e) => { e.stopPropagation(); open(); } },
+        h('span', { class: 'gif-category-label' }, glyph ? icon(glyph, 16) : null, label)), src, kind));
+      if (fav.length) tile('Favorites', fav[0].src, fav[0].kind, ICONS.star, () => showList('Favorites', () => Promise.resolve(fav)));
+      tile('Trending GIFs', trending.preview, null, null, () => showList('Trending GIFs', () => api.gifSearch(null)));
+      for (const c of trending.categories || []) tile(c.name, c.src, null, null, () => { showList(c.name, () => api.gifSearch(c.name)); });
       area.appendChild(tiles);
     }).catch((e) => { if (mine === asked) message('Couldn’t load GIFs: ' + e); });
   };

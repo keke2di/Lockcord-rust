@@ -9,6 +9,7 @@ import { api, on } from './api.js';
 import { h } from './dom.js';
 import { avatar, displayName } from './people.js';
 import { SHORTCODES } from './emoji.js';
+import { channelIcon } from './servers.js';
 
 const MAX_SHOWN = 10;
 const SEARCH_DELAY_MS = 300;
@@ -84,7 +85,7 @@ export function attachAutocomplete(input, ctx) {
   function channels(w, q) {
     if (!w.guild) return [];
     return (w.guild.channels || []).filter((c) => TEXTUAL.has(c.type) && matches(q, c.name))
-      .map((c) => ({ kind: 'channel', sort: c.name.toLowerCase(), insert: '<#' + c.id + '>', draw: () => [h('span', { class: 'ac-glyph' }, c.type === 2 ? '🔊' : '#'), h('span', { class: 'ac-name' }, c.name)] }))
+      .map((c) => ({ kind: 'channel', sort: c.name.toLowerCase(), insert: '<#' + c.id + '>', draw: () => [h('span', { class: 'ac-glyph' }, channelIcon(c.type, 18)), h('span', { class: 'ac-name' }, c.name)] }))
       .sort(startsFirst(q));
   }
 

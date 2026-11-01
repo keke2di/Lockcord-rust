@@ -4,6 +4,7 @@
 import { h, icon, ICONS, snowflakeTime, stamp } from './dom.js';
 import { parse, plain, render } from './markdown.js';
 import { avatar, displayName } from './people.js';
+import { channelIcon } from './servers.js';
 
 export const FORUM_TYPES = new Set([15, 16]);
 
@@ -54,7 +55,7 @@ export function renderForum(pane, channel, data, ctx) {
   pane.textContent = '';
   const tags = new Map((channel.available_tags || []).map((t) => [t.id, t]));
   pane.appendChild(h('header', { class: 'chat-header' },
-    h('div', { class: 'header-name' }, h('span', { class: 'header-hash', 'aria-hidden': 'true' }, '💬'), h('span', null, channel.name || ''),
+    h('div', { class: 'header-name' }, h('span', { class: 'header-hash', 'aria-hidden': 'true' }, channelIcon(channel.type, 24)), h('span', null, channel.name || ''),
       channel.topic ? h('span', { class: 'header-topic', title: channel.topic }, channel.topic) : null)));
   const list = h('div', { class: 'forum-list' });
   pane.appendChild(h('div', { class: 'forum-body' }, list));

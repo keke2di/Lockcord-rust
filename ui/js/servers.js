@@ -87,7 +87,9 @@ export function firstChannel(guild, last) {
   return null;
 }
 
-const CHANNEL_GLYPH = { 0: '#', 5: '📢', 15: '💬', 16: '🖼️', 2: '🔊', 13: '🎙️' };
+// Each channel kind's icon (dom.js ICONS): drawn as .lc-icon, so it follows the theme.
+export const CHANNEL_ICON = { 0: 'hash', 5: 'megaphone', 15: 'forum', 16: 'media', 2: 'speaker', 13: 'stage' };
+export const channelIcon = (type, size = 20) => icon(ICONS[CHANNEL_ICON[type] || 'hash'], size);
 
 // ctx: { guild, current, unread(channel), mentions(channel), muted(channel), open(channel),
 //        unsupported(channel), threads(channel): the threads listed under it,
@@ -105,7 +107,7 @@ export function renderChannels(list, ctx) {
       list.appendChild(h('button', {
         type: 'button', class: cls, title: c.topic || c.name,
         onclick: () => (opens ? ctx.open(c) : ctx.unsupported(c)),
-      }, h('span', { class: 'channel-glyph', 'aria-hidden': 'true' }, CHANNEL_GLYPH[c.type] || '#'),
+      }, h('span', { class: 'channel-glyph', 'aria-hidden': 'true' }, channelIcon(c.type)),
         h('span', { class: 'channel-name' }, c.name || ''),
         count ? h('span', { class: 'badge' }, count > 99 ? '99+' : String(count)) : null));
       // A voice channel's people, under it.
