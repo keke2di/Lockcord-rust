@@ -112,8 +112,10 @@ pub async fn check(http: &reqwest::Client, current: &str) -> Result<Option<Relea
         .send()
         .await
         .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+    // Not found: the repository is private or gone (it always has releases), so "you're up to
+    // date" would be a guess.
     if answer.status().as_u16() == 404 {
-        return Ok(None);
+        return Err("GitHub didn't show LockCord's releases (is the repository public?).".into());
     }
     if !answer.status().is_success() {
         return Err(format!("GitHub answered {}", answer.status().as_u16()));

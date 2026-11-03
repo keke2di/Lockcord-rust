@@ -12,8 +12,6 @@ on:
         default: false
   push:
     tags: ['v*']
-    # The branch the macOS port is tried on (a workflow only on a branch can't be run by hand).
-    branches: ['macos-build']
 
 permissions:
   contents: write

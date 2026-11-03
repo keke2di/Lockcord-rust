@@ -1,6 +1,5 @@
 /* Midnight Pro: near-black with a soft grey glow and a little grain, panels floating as rounded
-   cards with hairline edges, pill buttons and one strong accent (the owner's "darktheme" and
-   "modern" references). Its palettes (theme.js: Ember, True Black OLED, Steel) set the colours and
+   cards with hairline edges, pill buttons and one strong accent. Its palettes (theme.js: Ember, True Black OLED, Steel) set the colours and
    how much glow and grain show (--lc-skin-glow, --lc-skin-grain). */
 
 :root {
