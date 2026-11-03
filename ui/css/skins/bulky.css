@@ -1,31 +1,36 @@
-/* Sakura Retro: pastel pixel windows (the owner's "sakura" reference). Thick dark outlines with a
-   hard offset shadow, title strips with three dots on every pane, chunky outlined buttons in a
-   monospace face, a pixel grid behind it all, striped bars. Its palettes (theme.js: Sakura, Mint,
-   Sunset) set the pastels; --lc-ink is the outline colour. */
+/* Sakura Retro: pastel pixel windows in a flower garden (the owner's "sakura" reference, made
+   "WOW" for the owner's wife). Thick outlines with a hard offset shadow and a soft glow, rounded
+   windows whose title strips carry three blossoms and a flowering vine, chunky outlined buttons in a
+   monospace face, a pixel grid on a pastel gradient, ribbon scrollbars, hearts, bows and sparkles.
+   Its palettes (theme.js: Sakura, Mint, Sunset, Sakura Night, Arcade) set the pastels, --lc-ink
+   (the outline) and the garden's colours; garden.js draws the --lc-art-* pictures in them and runs
+   the moving parts (.lc-garden-back / .lc-garden-front, styled at the end). */
 
 :root {
-    --lc-font: 'Segoe UI', system-ui, sans-serif;
-    --lc-font-pixel: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+    --lc-font: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --lc-font-pixel: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'Courier New', monospace;
     --lc-ink: #5a3a78;
-    --lc-radius-s: 6px;
-    --lc-radius-m: 8px;
-    --lc-radius-l: 10px;
+    --lc-radius-s: 10px;
+    --lc-radius-m: 14px;
+    --lc-radius-l: 18px;
     --lc-control-height: 38px;
-    --lc-control-radius: 8px;
-    --lc-input-radius: 8px;
-    --lc-item-radius: 8px;
-    --lc-composer-radius: 10px;
+    --lc-control-radius: 14px;
+    --lc-input-radius: 14px;
+    --lc-item-radius: 12px;
+    --lc-composer-radius: 16px;
     --lc-panel-gap: 12px;
-    --lc-panel-radius: 10px;
+    --lc-panel-radius: 18px;
+    --lc-glow: color-mix(in srgb, var(--lc-flower-b, #ff86bf) 38%, transparent);
     --lc-panel-border: 3px solid var(--lc-ink);
-    --lc-panel-shadow: 5px 5px 0 var(--lc-ink);
+    --lc-panel-shadow: 5px 5px 0 var(--lc-ink), 0 0 26px 2px var(--lc-glow);
     --lc-hairline: color-mix(in srgb, var(--lc-ink) 35%, transparent);
     --lc-titlebar-height: 38px;
     --lc-titlebar-text: var(--lc-ink);
     --lc-focus: 0 0 0 3px var(--lc-ink);
+    --lc-strip: 22px;
 }
 
-/* The pixel grid on a pastel gradient. */
+/* The pixel grid on a pastel gradient (the meadow and the falling petals go over it, garden.js). */
 html, body {
     background:
         linear-gradient(color-mix(in srgb, var(--lc-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 24px 24px,
@@ -34,89 +39,130 @@ html, body {
 }
 .app { background: transparent; padding-bottom: calc(var(--lc-panel-gap) + 5px); padding-right: calc(var(--lc-panel-gap) + 5px); }
 
-/* Every pane a little window: a gradient title strip with three dots. */
-.app > :is(.rail, .sidebar, .chat, .member-panel) { position: relative; padding-top: 18px; background: var(--lc-chat-bg); }
-.app > :is(.rail, .sidebar, .chat, .member-panel)::before {
-    content: ''; position: absolute; inset: 0 0 auto 0; height: 16px; z-index: 2; border-bottom: 3px solid var(--lc-ink);
+/* Every pane a little window, a touch see-through so the garden shows: a title strip with three
+   blossoms and a flowering vine. */
+.app > :is(.rail, .sidebar, .chat, .member-panel) { position: relative; padding-top: calc(var(--lc-strip) + 3px); background: color-mix(in srgb, var(--lc-chat-bg) 88%, transparent); }
+.app > :is(.rail, .sidebar, .chat, .member-panel)::before, .settings-nav::before, .settings-main::before {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: var(--lc-strip); z-index: 2; border-bottom: 3px solid var(--lc-ink); pointer-events: none;
     background:
-        radial-gradient(circle, #ff8fa3 3px, transparent 3.5px) 8px 50% / 12px 12px no-repeat,
-        radial-gradient(circle, #ffd36b 3px, transparent 3.5px) 20px 50% / 12px 12px no-repeat,
-        radial-gradient(circle, #7fd7a5 3px, transparent 3.5px) 32px 50% / 12px 12px no-repeat,
+        var(--lc-art-blossom) 4px 50% / 17px 17px no-repeat,
+        var(--lc-art-daisy) 22px 50% / 15px 15px no-repeat,
+        var(--lc-art-blossom) 39px 50% / 17px 17px no-repeat,
+        var(--lc-art-vine) 60px 50% / 120px 22px repeat-x,
         linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b));
 }
-.app > .rail::before { background: linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
-.app > .sidebar { background: var(--lc-sidebar); }
+.app > .rail::before { background: var(--lc-art-blossom) 50% 50% / 17px 17px no-repeat, linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.app > .sidebar { background: color-mix(in srgb, var(--lc-sidebar) 88%, transparent); }
+/* On the dark schemes the garden behind would only grey the panes: they stay nearly solid. */
+:root.lc-scheme-dark .app > :is(.rail, .chat, .member-panel) { background: color-mix(in srgb, var(--lc-chat-bg) 95%, transparent); }
+:root.lc-scheme-dark .app > .sidebar { background: color-mix(in srgb, var(--lc-sidebar) 95%, transparent); }
 .sidebar, .member-panel, .search-panel { border: 0; }
 .chat-header, .guild-title { border-bottom: 3px dashed var(--lc-hairline); box-shadow: none; }
 
-/* The title bar: a pastel strip with a chunky title. */
+/* A big soft blossom branch behind the messages, bottom right. */
+.app > .chat .chat-column { background: var(--lc-art-corner-branch) right 8px bottom 70px / 300px 240px no-repeat; }
+
+/* The title bar: a pastel strip with a chunky title, a bow and a flowering branch. */
 .titlebar { background: linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); border-bottom: 3px solid var(--lc-ink); }
 .titlebar-title { font: 800 14px var(--lc-font-pixel); letter-spacing: 0.08em; text-transform: lowercase; color: var(--lc-ink); }
 .titlebar-title svg { color: var(--lc-ink); }
+.titlebar-title > span::after { content: ''; display: inline-block; width: 30px; height: 20px; margin-left: 8px; vertical-align: -5px; background: var(--lc-art-bow) center / contain no-repeat; }
+.titlebar-title::after { content: ''; flex: 0 1 260px; min-width: 0; height: 38px; margin-left: auto; margin-right: 8px; background: var(--lc-art-title-branch) right center / auto 38px no-repeat; pointer-events: none; }
 .titlebar-buttons { gap: 6px; padding-right: 8px; align-items: center; }
-.titlebar-button { width: 26px; height: 22px; border: 2px solid var(--lc-ink); border-radius: 6px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); }
+.titlebar-button { width: 26px; height: 22px; border: 2px solid var(--lc-ink); border-radius: var(--lc-radius-s); background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); }
 .titlebar-button:hover { background: var(--lc-brand); color: var(--lc-on-accent); }
-.titlebar-button.close:hover { background: #ff8fa3; color: var(--lc-on-accent); }
+.titlebar-button.close:hover { background: var(--lc-heart, #ff8fa3); color: var(--lc-on-accent); }
 
 /* Type: headings, labels and buttons in the pixel face. */
 .header-name, .guild-title, .sidebar-title, .channel-category, .members-title, .section-title, .modal-title, .button, .call-phase, .ring-name, .skin-card-name {
     font-family: var(--lc-font-pixel); letter-spacing: 0.04em;
 }
 .sidebar-title, .channel-category, .members-title { text-transform: lowercase; font-weight: 800; color: var(--lc-ink); }
+.sidebar-title::before, .members-title::before { content: ''; display: inline-block; width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px; background: var(--lc-art-heart) center / contain no-repeat; }
 
-/* Lists: chunky rows; the selected one outlined with a hard shadow. */
+/* Lists: chunky rows; the selected one outlined with a hard shadow and a heart sticker. */
 .dm, .channel { height: 40px; color: var(--lc-ink); font-weight: 600; }
 .dm.selected, .channel.selected { background: var(--lc-brand); color: var(--lc-on-accent); box-shadow: inset 0 0 0 2px var(--lc-ink), 3px 3px 0 var(--lc-ink); }
+.dm.selected::after, .channel.selected::after {
+    content: ''; position: absolute; top: -6px; right: -4px; width: 16px; height: 15px; pointer-events: none;
+    background: var(--lc-art-heart) center / contain no-repeat; transform: rotate(14deg);
+}
 .dm:hover:not(.selected), .channel:hover:not(.selected) { background: color-mix(in srgb, var(--lc-brand) 35%, transparent); }
-.rail-button { border-radius: 10px; border: 3px solid var(--lc-ink); background: var(--lc-sidebar); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); }
+.rail-button { border-radius: var(--lc-radius-l); border: 3px solid var(--lc-ink); background: var(--lc-sidebar); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); }
 .rail-item.selected .rail-button { background: var(--lc-brand); }
-.user-panel { margin: 8px; border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); }
+.user-panel { margin: 8px; border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); }
 
-/* Buttons: outlined, a hard shadow that presses in. */
+/* Buttons: outlined, a hard shadow that presses in; the main ones wear a little flower. */
 .button, .button.secondary {
     border: 3px solid var(--lc-ink); color: var(--lc-ink); font-weight: 800; text-transform: uppercase; font-size: 0.8125rem;
     background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink);
 }
-.button.brand, .button.positive { background: var(--lc-brand); color: var(--lc-on-accent); }
-.button.secondary { background: color-mix(in srgb, #8ec5ff 60%, var(--lc-chat-bg)); }
-.button.danger, .button.danger-outline { background: #ff8fa3; color: var(--lc-on-accent); border-color: var(--lc-on-accent); }
+.button.brand, .button.positive { position: relative; background: var(--lc-brand); color: var(--lc-on-accent); }
+.button.brand::after, .button.positive::after {
+    content: ''; position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; pointer-events: none;
+    background: var(--lc-art-blossom) center / contain no-repeat;
+}
+.button.secondary { background: color-mix(in srgb, var(--lc-wing-b, #8ec5ff) 35%, var(--lc-chat-bg)); }
+.button.danger, .button.danger-outline { background: var(--lc-heart, #ff8fa3); color: var(--lc-on-accent); border-color: var(--lc-ink); }
 .button:hover:not(:disabled) { filter: brightness(1.04); }
 .button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
 .button.link { border: 0; box-shadow: none; background: none; text-transform: none; text-decoration: underline; }
-.header-button { border-radius: 8px; color: var(--lc-ink); }
+.button.link::after { content: none; }
+.header-button { border-radius: var(--lc-radius-m); color: var(--lc-ink); }
 .header-button:hover:not(:disabled) { background: color-mix(in srgb, var(--lc-brand) 40%, transparent); box-shadow: inset 0 0 0 2px var(--lc-ink); }
 
-/* Inputs and the composer: outlined boxes. */
+/* Inputs and the composer: outlined boxes; a blossom peeks over the composer's corner. */
 .text-input, .input, .composer { border: 3px solid var(--lc-ink); background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); color: var(--lc-ink); }
+.composer { position: relative; }
+.composer::before {
+    content: ''; position: absolute; top: -13px; left: -11px; width: 24px; height: 24px; z-index: 1; pointer-events: none;
+    background: var(--lc-art-blossom) center / contain no-repeat; transform: rotate(-12deg);
+}
+.composer::after {
+    content: ''; position: absolute; top: -9px; left: 10px; width: 14px; height: 14px; z-index: 1; pointer-events: none;
+    background: var(--lc-art-sparkle) center / contain no-repeat;
+}
 .composer-input, .composer-input::placeholder { color: var(--lc-ink); }
 
 /* Popups, dialogs, cards. */
-.popup, .modal, .dropdown-list, .autocomplete { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); color: var(--lc-ink); }
+.popup, .modal, .dropdown-list, .autocomplete { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); box-shadow: 5px 5px 0 var(--lc-ink), 0 0 22px var(--lc-glow); color: var(--lc-ink); }
 .modal-buttons { background: var(--lc-sidebar); border-top: 3px solid var(--lc-ink); }
-.badge { background: #ff8fa3; color: var(--lc-on-accent); border: 2px solid var(--lc-ink); }
+.badge { position: relative; background: var(--lc-heart, #ff8fa3); color: var(--lc-on-accent); border: 2px solid var(--lc-ink); overflow: visible; }
+.badge::after {
+    content: ''; position: absolute; top: -7px; right: -7px; width: 11px; height: 11px; pointer-events: none;
+    background: var(--lc-art-sparkle) center / contain no-repeat;
+}
 .lc-messages-cards .message { box-shadow: inset 0 0 0 2px var(--lc-hairline); }
 
-/* Calls. */
+/* Calls: a speaking tile bobs and sparkles. */
 .call-slot, .voice-pane-body { background: transparent; }
-.call-tile { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-sidebar); box-shadow: 4px 4px 0 var(--lc-ink); }
-.call-tile.speaking { box-shadow: 4px 4px 0 var(--lc-ink), 0 0 0 4px #7fd7a5; }
+.call-tile { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); background: var(--lc-sidebar); box-shadow: 4px 4px 0 var(--lc-ink); }
+.call-tile.speaking { box-shadow: 4px 4px 0 var(--lc-ink), 0 0 0 4px var(--lc-flower-b, #7fd7a5), 0 0 22px var(--lc-glow); }
+.call-tile.speaking::after {
+    content: ''; position: absolute; inset: 6px; z-index: 3; pointer-events: none;
+    background:
+        var(--lc-art-sparkle) 0 0 / 16px 16px no-repeat,
+        var(--lc-art-heart) 100% 0 / 16px 15px no-repeat,
+        var(--lc-art-sparkle) 100% 100% / 13px 13px no-repeat,
+        var(--lc-art-blossom) 0 100% / 18px 18px no-repeat;
+    animation: lc-twinkle calc(1.2s / max(var(--lc-motion), 0.001)) steps(2, end) infinite;
+}
 .tile-name { background: var(--lc-chat-bg); color: var(--lc-ink); border: 2px solid var(--lc-ink); font-family: var(--lc-font-pixel); }
-.call-button { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); }
-.call-button.danger { background: #ff8fa3; color: var(--lc-on-accent); }
-.call-button.accept { background: #7fd7a5; color: var(--lc-on-accent); }
+.call-button { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); }
+.call-button.danger { background: var(--lc-heart, #ff8fa3); color: var(--lc-on-accent); }
+.call-button.accept { background: var(--lc-leaf, #7fd7a5); color: var(--lc-on-accent); }
 
-/* Settings: the same windows. */
-.settings-screen { background: transparent; padding: 12px; gap: 12px; }
-.settings-nav, .settings-main { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); overflow: hidden; }
-.settings-nav { background: var(--lc-sidebar); }
+/* Settings: the same windows, with their own blossom strips. */
+.settings-screen { padding: 12px; gap: 12px; background: linear-gradient(120deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.settings-nav, .settings-main { position: relative; padding-top: var(--lc-strip); background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); box-shadow: 5px 5px 0 var(--lc-ink), 0 0 26px 2px var(--lc-glow); overflow: hidden; }
+.settings-nav { background: var(--lc-sidebar); padding-top: calc(var(--lc-strip) + 12px); }
 .settings-nav-item.selected { background: var(--lc-brand); color: var(--lc-on-accent); box-shadow: inset 0 0 0 2px var(--lc-ink); }
-.switch { border: 2px solid var(--lc-ink); }
 
-/* Striped scrollbars. */
+/* Ribbon scrollbars: pink and white satin stripes. */
 ::-webkit-scrollbar { width: 14px; }
 ::-webkit-scrollbar-thumb, :hover::-webkit-scrollbar-thumb {
-    border: 2px solid var(--lc-ink); border-radius: 6px; background-clip: border-box;
-    background: repeating-linear-gradient(45deg, var(--lc-brand), var(--lc-brand) 4px, color-mix(in srgb, var(--lc-brand) 55%, #fff) 4px, color-mix(in srgb, var(--lc-brand) 55%, #fff) 8px);
+    border: 2px solid var(--lc-ink); border-radius: var(--lc-radius-s); background-clip: border-box;
+    background: repeating-linear-gradient(45deg, var(--lc-brand), var(--lc-brand) 4px, color-mix(in srgb, var(--lc-brand) 40%, #fff) 4px, color-mix(in srgb, var(--lc-brand) 40%, #fff) 8px);
 }
 * { scrollbar-color: auto; }
 
@@ -140,49 +186,148 @@ svg.lc-icon { shape-rendering: crispEdges; }
 .titlebar-glyph path { stroke: none; }
 .call-tile.speaking { animation: sakura-bob 0.6s steps(2, end) infinite; }
 @keyframes sakura-bob { 50% { transform: translateY(-3px); } }
-.spinner { animation-timing-function: steps(8, end); }
+@keyframes lc-twinkle { 50% { opacity: 0.35; transform: scale(0.96); } }
 
-/* Controls: chunky outlined pieces. */
-.switch { border: 3px solid var(--lc-ink); background: var(--lc-chat-bg); box-shadow: 2px 2px 0 var(--lc-ink); }
+/* The spinner: a blossom turning. */
+.spinner { border: 0; border-radius: 0; background: var(--lc-art-blossom) center / contain no-repeat; animation-timing-function: steps(10, end); }
+
+/* Controls: chunky outlined pieces; flower knobs, heart radios. */
+/* The switch: 50 × 28 with its 3 px outline, so the 22 px flower knob fits inside and slides 22 px. */
+.switch { width: 50px; height: 28px; border: 3px solid var(--lc-ink); background: var(--lc-chat-bg); box-shadow: 2px 2px 0 var(--lc-ink); }
 .switch.on { background: var(--lc-brand); }
-.switch-knob { background: #fff; border: 2px solid var(--lc-ink); border-radius: 4px; box-shadow: none; }
-.range::-webkit-slider-thumb { border-radius: 3px; background: var(--lc-brand); border: 3px solid var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); }
-.radio-card { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 3px 3px 0 var(--lc-ink); }
+.switch-knob { top: 0; left: 0; width: 22px; height: 22px; background: var(--lc-art-blossom) center / contain no-repeat; border: 0; border-radius: 50%; box-shadow: none; }
+.switch.on .switch-knob { transform: translateX(22px); }
+.switch:not(.on) .switch-knob { filter: saturate(0.35); }
+/* A 22 px thumb on the 6 px track: 8 px up to sit centred. */
+.range::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: var(--lc-art-blossom) center / contain no-repeat; border: 0; box-shadow: none; }
+.radio-card { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); box-shadow: 3px 3px 0 var(--lc-ink); }
 .radio-card.selected, .radio-card:has(input:checked) { background: color-mix(in srgb, var(--lc-brand) 45%, var(--lc-chat-bg)); }
 .radio-dot { border: 2px solid var(--lc-ink); }
-.dropdown-button { border: 3px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
-.menu-item { border-radius: 6px; color: var(--lc-ink); font-weight: 600; }
+.radio-card.selected .radio-dot::after { width: 14px; height: 13px; border-radius: 0; background: var(--lc-art-heart) center / contain no-repeat; }
+.dropdown-button { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-m); background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
+.menu-item { position: relative; border-radius: var(--lc-radius-s); color: var(--lc-ink); font-weight: 600; }
 .menu-item:hover { background: var(--lc-brand); box-shadow: inset 0 0 0 2px var(--lc-ink); }
+.menu-item:hover::after { content: ''; position: absolute; right: 6px; top: 50%; width: 12px; height: 11px; margin-top: -6px; pointer-events: none; background: var(--lc-art-heart) center / contain no-repeat; }
 
-/* Messages and their parts. */
-.reaction { border: 2px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); box-shadow: 2px 2px 0 var(--lc-ink); }
-.embed { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-sidebar); box-shadow: 3px 3px 0 var(--lc-ink); }
-.md-mention { background: var(--lc-brand); color: var(--lc-on-accent); border: 2px solid var(--lc-ink); border-radius: 6px; font-weight: 700; }
-.md-code, .md-pre { font-family: var(--lc-font-pixel); background: var(--lc-sidebar); border: 2px solid var(--lc-ink); border-radius: 6px; color: var(--lc-ink); }
-.reply-bar, .file-card, .thread-chip, .poll, .forum-post { border: 3px solid var(--lc-ink); border-radius: 10px; background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); }
+/* Messages and their parts: mentions wear a heart. */
+.reaction { border: 2px solid var(--lc-ink); border-radius: var(--lc-radius-m); background: var(--lc-chat-bg); box-shadow: 2px 2px 0 var(--lc-ink); }
+.embed { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); background: var(--lc-sidebar); box-shadow: 3px 3px 0 var(--lc-ink); }
+.md-mention { background: var(--lc-brand); color: var(--lc-on-accent); border: 2px solid var(--lc-ink); border-radius: var(--lc-radius-s); font-weight: 700; }
+.md-mention::before { content: ''; display: inline-block; width: 0.8em; height: 0.75em; margin-right: 3px; vertical-align: -0.05em; background: var(--lc-art-heart) center / contain no-repeat; }
+.md-code, .md-pre { font-family: var(--lc-font-pixel); background: var(--lc-sidebar); border: 2px solid var(--lc-ink); border-radius: var(--lc-radius-s); color: var(--lc-ink); }
+.reply-bar, .file-card, .thread-chip, .poll, .forum-post { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); background: var(--lc-chat-bg); box-shadow: 3px 3px 0 var(--lc-ink); }
 
-/* Toasts as little dialog windows; sign-in as a "continue?" box on the grid. */
-.toast, .update-card, .ring-card { background: var(--lc-chat-bg); color: var(--lc-ink); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
+/* Toasts as little dialog windows; sign-in as a "continue?" box with a bow and a blossom branch. */
+.toast, .update-card, .ring-card { background: var(--lc-chat-bg); color: var(--lc-ink); border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); box-shadow: 5px 5px 0 var(--lc-ink), 0 0 22px var(--lc-glow); font-family: var(--lc-font-pixel); }
 .update-card strong, .ring-name { color: var(--lc-ink); }
 .signin { background: transparent; }
-.signin-card { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 12px; box-shadow: 6px 6px 0 var(--lc-ink); color: var(--lc-ink); position: relative; padding-top: 40px; }
-.signin-card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 22px; border-bottom: 3px solid var(--lc-ink); border-radius: 9px 9px 0 0;
-    background: radial-gradient(circle, #ff8fa3 4px, transparent 4.5px) 10px 50% / 14px 14px no-repeat, radial-gradient(circle, #ffd36b 4px, transparent 4.5px) 26px 50% / 14px 14px no-repeat,
-        radial-gradient(circle, #7fd7a5 4px, transparent 4.5px) 42px 50% / 14px 14px no-repeat, linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.signin-card { background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 22px; box-shadow: 6px 6px 0 var(--lc-ink), 0 0 34px 4px var(--lc-glow); color: var(--lc-ink); position: relative; padding-top: 44px; overflow: visible; }
+.signin-card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 26px; border-bottom: 3px solid var(--lc-ink); border-radius: 19px 19px 0 0; pointer-events: none;
+    background:
+        var(--lc-art-blossom) 8px 50% / 20px 20px no-repeat, var(--lc-art-daisy) 30px 50% / 18px 18px no-repeat, var(--lc-art-blossom) 50px 50% / 20px 20px no-repeat,
+        var(--lc-art-vine) 76px 50% / 120px 22px repeat-x,
+        linear-gradient(90deg, var(--lc-gradient-a), var(--lc-gradient-b)); }
+.signin-card::after {
+    content: ''; position: absolute; top: -34px; right: -30px; width: 150px; height: 120px; pointer-events: none;
+    background: var(--lc-art-card-branch) center / contain no-repeat;
+}
 .signin-card h1 { font-family: var(--lc-font-pixel); letter-spacing: 0.1em; text-transform: lowercase; }
-.friends-tab { border: 2px solid var(--lc-ink); border-radius: 8px; font-family: var(--lc-font-pixel); color: var(--lc-ink); }
+.signin-card h1::after { content: ''; display: inline-block; width: 36px; height: 24px; margin-left: 8px; vertical-align: -4px; background: var(--lc-art-bow) center / contain no-repeat; }
+.friends-tab { border: 2px solid var(--lc-ink); border-radius: var(--lc-radius-m); font-family: var(--lc-font-pixel); color: var(--lc-ink); }
 .friends-tab.selected { background: var(--lc-brand); box-shadow: 2px 2px 0 var(--lc-ink); }
-.friend { border-radius: 8px; }
-.emoji-picker, .profile-popout { --lc-picker-bg: var(--lc-chat-bg); background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: 10px; box-shadow: 5px 5px 0 var(--lc-ink); color: var(--lc-ink); }
-.emoji-cell:hover { background: var(--lc-brand); border-radius: 6px; box-shadow: inset 0 0 0 2px var(--lc-ink); }
+.friend { border-radius: var(--lc-radius-m); }
+.emoji-picker, .profile-popout { --lc-picker-bg: var(--lc-chat-bg); background: var(--lc-chat-bg); border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-l); box-shadow: 5px 5px 0 var(--lc-ink), 0 0 22px var(--lc-glow); color: var(--lc-ink); }
+.emoji-cell:hover { background: var(--lc-brand); border-radius: var(--lc-radius-s); box-shadow: inset 0 0 0 2px var(--lc-ink); }
 
 /* The user panel: room for the name inside the thick frame. */
 .user-panel { margin: 8px 6px; padding: 0 6px; gap: 4px; }
 .user-panel .panel-button { width: 26px; }
 
 /* The top bar: chunky outlined buttons and search. */
-.header-text-button { border: 3px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); color: var(--lc-ink); font-family: var(--lc-font-pixel); font-weight: 800; box-shadow: 2px 2px 0 var(--lc-ink); }
+.header-text-button { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-m); background: var(--lc-chat-bg); color: var(--lc-ink); font-family: var(--lc-font-pixel); font-weight: 800; box-shadow: 2px 2px 0 var(--lc-ink); }
 .header-text-button:hover { background: var(--lc-brand); color: var(--lc-on-accent); }
-.header-text-button.warn { background: #ffd36b; color: var(--lc-on-accent); }
-.header-e2e { border-radius: 8px; }
-.search-input { border: 3px solid var(--lc-ink); border-radius: 8px; background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
+.header-text-button.warn { background: var(--lc-flower-c, #ffd36b); color: var(--lc-on-accent); }
+.header-e2e { border-radius: var(--lc-radius-m); }
+.search-input { border: 3px solid var(--lc-ink); border-radius: var(--lc-radius-m); background: var(--lc-chat-bg); color: var(--lc-ink); box-shadow: 2px 2px 0 var(--lc-ink); font-family: var(--lc-font-pixel); }
+
+/* --- The garden (garden.js) ------------------------------------------------------------------------
+   Behind the panes: the meadow and two layers of falling petals, each a tile moved by exactly one
+   tile height so it loops, swaying sideways. In front: butterflies and short-lived sprites. Nothing
+   takes a click. With motion off (lc-garden-still, or reduced motion) everything stands still. */
+
+.lc-garden-back, .lc-garden-front { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.lc-garden-back { z-index: 0; }
+.lc-garden-front { z-index: 32; }
+.lc-garden-front * { pointer-events: none; }
+.lc-garden-meadow { position: absolute; inset: 0; background: var(--lc-art-meadow) 0 0 / 360px 360px; }
+.lc-garden-sway { position: absolute; inset: 0; animation: lc-sway 7s ease-in-out infinite alternate; }
+.lc-garden-sway.near { animation-duration: 5s; animation-delay: -2s; }
+.lc-garden-petals {
+    position: absolute; inset: calc(-1 * var(--tile)) -40px 0 -40px;
+    background: var(--lc-art-petals) var(--offset, 0) 0 / var(--tile) var(--tile);
+    animation: lc-petal-fall var(--fall) linear infinite; will-change: transform;
+}
+.far .lc-garden-petals { --tile: 210px; --fall: 36s; opacity: 0.5; }
+.near .lc-garden-petals { --tile: 320px; --fall: 22s; --offset: 110px; opacity: 0.9; }
+@keyframes lc-petal-fall { to { transform: translateY(var(--tile)); } }
+@keyframes lc-sway { from { transform: translateX(-22px); } to { transform: translateX(22px); } }
+
+/* Butterflies: two wings that flap round the body; resting ones fan slowly. */
+.lc-fly { position: absolute; left: 0; top: 0; width: 46px; height: 32px; margin: -16px 0 0 -23px; will-change: transform; filter: drop-shadow(2px 2px 0 color-mix(in srgb, var(--lc-ink) 35%, transparent)); }
+.lc-fly-bob { position: absolute; inset: 0; animation: lc-fly-bob 1.7s ease-in-out infinite alternate; }
+.lc-fly-wing { position: absolute; top: 0; width: 20px; height: 32px; background: center / 100% 100% no-repeat; animation: lc-flap var(--flap, 0.26s) ease-in-out infinite alternate; }
+.lc-fly-wing.l { left: 0; background-image: var(--lc-art-wing-l); transform-origin: 100% 50%; }
+.lc-fly-wing.r { left: 26px; background-image: var(--lc-art-wing-r); transform-origin: 0 50%; }
+.lc-fly-body { position: absolute; left: 20px; top: 0; width: 6px; height: 32px; background: var(--lc-art-body) center / 100% 100% no-repeat; }
+.lc-fly.resting .lc-fly-wing { animation-duration: 1.6s; }
+@keyframes lc-flap { from { transform: scaleX(1); } to { transform: scaleX(0.28); } }
+@keyframes lc-fly-bob { 0% { transform: translate(-3px, 0) rotate(-6deg); } 50% { transform: translate(2px, -7px) rotate(4deg); } 100% { transform: translate(4px, 2px) rotate(8deg); } }
+.lc-fly.resting .lc-fly-bob { animation: none; }
+
+/* Sprites: a petal drifting down, a heart floating up, the sparkle trail, bursts and blooms. */
+.lc-sprite { position: absolute; background: center / contain no-repeat; will-change: transform, opacity; }
+.lc-sprite.petal { background-image: var(--lc-art-petal); }
+.lc-sprite.heart { background-image: var(--lc-art-heart); }
+.lc-sprite.sparkle { background-image: var(--lc-art-sparkle); }
+.lc-sprite.blossom, .lc-sprite.bloom { background-image: var(--lc-art-blossom); }
+.lc-sprite.bloom.daisy { background-image: var(--lc-art-daisy); }
+.lc-sprite.falling { animation: lc-fall var(--dur) linear forwards; }
+.lc-sprite.rising { animation: lc-rise var(--dur) ease-out forwards; }
+.lc-sprite.trail { animation: lc-trail 0.8s ease-out forwards; }
+.lc-sprite:not(.falling):not(.rising):not(.trail):not(.bloom) { animation: lc-burst 0.95s cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
+.lc-sprite.bloom { animation: lc-bloom 0.8s ease-out forwards; }
+@keyframes lc-fall {
+    0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+    8% { opacity: 0.95; }
+    30% { transform: translate(var(--sway), 30vh) rotate(calc(var(--rot) * 0.3)); }
+    60% { transform: translate(calc(var(--sway) * -0.6), 62vh) rotate(calc(var(--rot) * 0.6)); }
+    92% { opacity: 0.95; }
+    100% { transform: translate(calc(var(--sway) * 0.4), calc(100vh + 30px)) rotate(var(--rot)); opacity: 0; }
+}
+@keyframes lc-rise {
+    0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+    12% { opacity: 0.95; }
+    50% { transform: translate(var(--sway), -40vh) scale(1); }
+    100% { transform: translate(calc(var(--sway) * -1), -80vh) scale(1.1); opacity: 0; }
+}
+@keyframes lc-trail {
+    0% { transform: scale(1) rotate(0deg); opacity: 1; }
+    100% { transform: translate(var(--dx), 18px) scale(0.2) rotate(var(--rot)); opacity: 0; }
+}
+@keyframes lc-burst {
+    0% { transform: translate(0, 0) scale(0.4) rotate(0deg); opacity: 1; }
+    70% { opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(1) rotate(var(--rot)); opacity: 0; }
+}
+@keyframes lc-bloom {
+    0% { transform: translate(0, 0) scale(0) rotate(-90deg); opacity: 1; }
+    55% { transform: translate(var(--dx), var(--dy)) scale(1.15) rotate(0deg); opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0.9) rotate(25deg); opacity: 0; }
+}
+
+/* Still: no petals falling, no wings flapping, no twinkle (the butterflies rest on the panes). */
+:root.lc-garden-still :is(.lc-garden-sway, .lc-garden-petals, .lc-fly-wing, .lc-fly-bob),
+:root.lc-garden-still .call-tile.speaking, :root.lc-garden-still .call-tile.speaking::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+    :is(.lc-garden-sway, .lc-garden-petals, .lc-fly-wing, .lc-fly-bob), .call-tile.speaking, .call-tile.speaking::after { animation: none; }
+}

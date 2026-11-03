@@ -41,6 +41,7 @@ pub fn client() -> reqwest::Client {
 /// Any file from Discord's hosts, whole, up to `max` bytes (saving a message's files).
 pub async fn download(http: &reqwest::Client, raw: &str, max: usize) -> Result<Vec<u8>, String> {
     let url = allowed(raw).ok_or("not a Discord file")?;
+    crate::netlog::note(&url.to_string());
     let response = http.get(url).header("User-Agent", fingerprint::user_agent()).header("Referer", "https://discord.com/").send().await.map_err(|e| e.without_url().to_string())?;
     if !response.status().is_success() {
         return Err(format!("download {}", response.status()));
@@ -113,6 +114,7 @@ async fn fetch_inner(http: &reqwest::Client, cache: &std::sync::Mutex<Cache>, ra
         return Ok(hit);
     }
     // As an <img> on discord.com would ask for it.
+    crate::netlog::note(&url.to_string());
     let response = http
         .get(url.clone())
         .header("User-Agent", fingerprint::user_agent())

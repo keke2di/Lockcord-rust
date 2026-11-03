@@ -3,7 +3,10 @@
 // is what's picked and saved (settings.json `theme`: "builtin:<scheme id>"); its tokens go on
 // :root and its theme's stylesheet is linked. Nothing a theme is made of comes from disk or the
 // user, so nothing here needs checking. Display settings (density, text size, motion) are the
-// user's own and go on top of any theme.
+// user's own and go on top of any theme. Sakura Retro also has its garden (garden.js): pictures drawn
+// in the scheme's --lc-flower-* colours and the butterflies, petals and hearts that move about.
+
+import { gardenMotion, gardenTokens, setGarden } from './garden.js';
 
 // The themes; `skin` is their stylesheet's name (css/skins/<skin>.css; none for 'default').
 export const THEMES = [
@@ -12,7 +15,7 @@ export const THEMES = [
   { id: 'clean', name: 'Blossom', description: 'A soft gradient behind floating cards, big round corners.' },
   { id: 'xp', name: 'Windows XP', description: 'Luna title bar, bevelled buttons, task panes, Tahoma.' },
   { id: 'glass', name: 'Aero Glass', description: 'Vista-style translucent glass with glossy highlights.' },
-  { id: 'bulky', name: 'Sakura Retro', description: 'Pastel pixel windows, thick outlines, chunky buttons.' },
+  { id: 'bulky', name: 'Sakura Retro', description: 'Pastel windows full of blossoms, falling petals, butterflies and hearts.' },
   { id: 'minimal', name: 'Minimal', description: 'No chrome: just text, spacing and one accent.' },
   { id: 'contrast', name: 'High Contrast', description: 'Ultra high contrast: black and white, thick outlines, a bright accent, focus always visible.' },
 ];
@@ -101,12 +104,18 @@ export const PRESETS = [
   dark('glass-dark', 'glass', 'Aero Dark', { chat: '#18212c', side: '#0d141c', rail: '#0d141c', composer: '#202b38', popout: '#1b2531', header: '#ffffff', text: '#e3ebf3', muted: '#93a3b5', accent: '#4aa8ff', link: '#7cc1ff' }, { '--lc-glass': '0.45' }),
   dark('glass-graphite', 'glass', 'Graphite', { chat: '#1d2024', side: '#121417', rail: '#121417', composer: '#25292e', popout: '#1f2226', header: '#ffffff', text: '#dfe3e8', muted: '#99a1ab', accent: '#9aa7b8', link: '#c3cdd9', onAccent: '#121417' }, { '--lc-glass': '0.5' }),
 
-  // Sakura Retro (css/skins/bulky.css): pastels with an ink outline.
-  light('bulky-sakura', 'bulky', 'Sakura', { chat: '#fff7fd', side: '#fde4f6', rail: '#fde4f6', header: '#3d2652', text: '#4a3060', muted: '#8a6fa0', accent: '#ffb3d9', onAccent: '#3d2652' }, { '--lc-ink': '#5a3a78', '--lc-gradient-a': '#ffe2c6', '--lc-gradient-b': '#ffc6ec' }),
-  light('bulky-mint', 'bulky', 'Mint', { chat: '#f5fffa', side: '#d9f7eb', rail: '#d9f7eb', header: '#1f3f3a', text: '#2a4a45', muted: '#5f8781', accent: '#9fe8c8', onAccent: '#1f3f3a' }, { '--lc-ink': '#2f5b54', '--lc-gradient-a': '#e3fff3', '--lc-gradient-b': '#c8eeff' }),
-  light('bulky-sunset', 'bulky', 'Sunset', { chat: '#fff8f0', side: '#ffe3cb', rail: '#ffe3cb', header: '#4a2340', text: '#56304b', muted: '#946b83', accent: '#ffb38a', onAccent: '#4a2340' }, { '--lc-ink': '#6b3557', '--lc-gradient-a': '#ffd6a5', '--lc-gradient-b': '#e9b8ff' }),
-  dark('bulky-night', 'bulky', 'Sakura Night', { chat: '#2a2038', side: '#33264a', rail: '#33264a', composer: '#2a2038', popout: '#2a2038', header: '#ffe8f7', text: '#f3dcf0', muted: '#b9a0c8', accent: '#ff9bd0', onAccent: '#2a2038' }, { '--lc-ink': '#f0c8ff', '--lc-gradient-a': '#1f1630', '--lc-gradient-b': '#3a1f45' }),
-  dark('bulky-arcade', 'bulky', 'Arcade', { chat: '#17172b', side: '#202042', rail: '#202042', composer: '#17172b', popout: '#17172b', header: '#f4fdff', text: '#dff6ff', muted: '#8fa6c4', accent: '#7df9ff', onAccent: '#17172b' }, { '--lc-ink': '#ff6be6', '--lc-gradient-a': '#0f0f24', '--lc-gradient-b': '#2a0f3d' }),
+  // Sakura Retro (css/skins/bulky.css): pastels with an ink outline, and a garden (garden.js) in
+  // each scheme's flower, leaf, wing, heart and sparkle colours.
+  light('bulky-sakura', 'bulky', 'Sakura', { chat: '#fff5fb', side: '#ffe3f2', rail: '#ffe3f2', header: '#4a2050', text: '#552b5e', muted: '#9a6a9e', accent: '#ff9ecf', onAccent: '#4a2050' },
+    { '--lc-ink': '#7a3a72', '--lc-gradient-a': '#ffe4ec', '--lc-gradient-b': '#ffc4e6', '--lc-flower-a': '#ffe1ef', '--lc-flower-b': '#ff86bf', '--lc-flower-c': '#ffd65c', '--lc-leaf': '#8fd6a0', '--lc-bark': '#a8678c', '--lc-wing-a': '#ffb3dc', '--lc-wing-b': '#c79bff', '--lc-heart': '#ff6fae', '--lc-sparkle': '#ffcf4d' }),
+  light('bulky-mint', 'bulky', 'Mint', { chat: '#f5fffa', side: '#d9f7eb', rail: '#d9f7eb', header: '#1f3f3a', text: '#2a4a45', muted: '#5f8781', accent: '#9fe8c8', onAccent: '#1f3f3a' },
+    { '--lc-ink': '#2f5b54', '--lc-gradient-a': '#e3fff3', '--lc-gradient-b': '#c8eeff', '--lc-flower-a': '#ffffff', '--lc-flower-b': '#ffb7d2', '--lc-flower-c': '#ffe27a', '--lc-leaf': '#5cbf8f', '--lc-bark': '#6f9a8f', '--lc-wing-a': '#bff3dc', '--lc-wing-b': '#a7d8ff', '--lc-heart': '#ff9ec4', '--lc-sparkle': '#ffd65c' }),
+  light('bulky-sunset', 'bulky', 'Sunset', { chat: '#fff8f0', side: '#ffe3cb', rail: '#ffe3cb', header: '#4a2340', text: '#56304b', muted: '#946b83', accent: '#ffb38a', onAccent: '#4a2340' },
+    { '--lc-ink': '#6b3557', '--lc-gradient-a': '#ffd6a5', '--lc-gradient-b': '#e9b8ff', '--lc-flower-a': '#ffe9d6', '--lc-flower-b': '#ff9f80', '--lc-flower-c': '#ffd36b', '--lc-leaf': '#9fcf8a', '--lc-bark': '#8a5a6a', '--lc-wing-a': '#ffc29e', '--lc-wing-b': '#e3a6ff', '--lc-heart': '#ff7f9c', '--lc-sparkle': '#ffcf4d' }),
+  dark('bulky-night', 'bulky', 'Sakura Night', { chat: '#2a2038', side: '#33264a', rail: '#33264a', composer: '#2a2038', popout: '#2a2038', header: '#ffe8f7', text: '#f3dcf0', muted: '#b9a0c8', accent: '#ff9bd0', onAccent: '#2a2038' },
+    { '--lc-ink': '#f0c8ff', '--lc-gradient-a': '#1f1630', '--lc-gradient-b': '#3a1f45', '--lc-flower-a': '#ffd3ea', '--lc-flower-b': '#ff6fb5', '--lc-flower-c': '#ffe08a', '--lc-leaf': '#7fcf9a', '--lc-bark': '#c78fb0', '--lc-wing-a': '#ff9bd0', '--lc-wing-b': '#9f8bff', '--lc-heart': '#ff7cc0', '--lc-sparkle': '#fff0a0' }),
+  dark('bulky-arcade', 'bulky', 'Arcade', { chat: '#17172b', side: '#202042', rail: '#202042', composer: '#17172b', popout: '#17172b', header: '#f4fdff', text: '#dff6ff', muted: '#8fa6c4', accent: '#7df9ff', onAccent: '#17172b' },
+    { '--lc-ink': '#ff6be6', '--lc-gradient-a': '#0f0f24', '--lc-gradient-b': '#2a0f3d', '--lc-flower-a': '#ffd1f7', '--lc-flower-b': '#ff6be6', '--lc-flower-c': '#7df9ff', '--lc-leaf': '#7dffb0', '--lc-bark': '#a07cff', '--lc-wing-a': '#7df9ff', '--lc-wing-b': '#ff6be6', '--lc-heart': '#ff6be6', '--lc-sparkle': '#7df9ff' }),
 
   // Minimal (css/skins/minimal.css): one surface, one accent.
   light('minimal-paper', 'minimal', 'Paper', { chat: '#fafafa', side: '#fafafa', rail: '#fafafa', header: '#000000', text: '#222222', muted: '#777777', accent: '#111111' }),
@@ -147,16 +156,19 @@ export function currentTheme() {
 // Applies a colour scheme, and with it its theme. `safe` applies the default.
 export function applyTheme(scheme, safe) {
   current = safe || !scheme ? DISCORD_DARK : scheme;
-  const lines = Object.entries(current.tokens || {}).map(([name, value]) => name + ': ' + value + ';');
+  const theme = THEMES.some((t) => t.id === current.theme) ? current.theme : 'default';
+  const garden = theme === 'bulky';
+  const tokens = { ...current.tokens, ...(garden ? gardenTokens(current.tokens) : {}) };
+  const lines = Object.entries(tokens).map(([name, value]) => name + ': ' + value + ';');
   lines.push('color-scheme: ' + current.mode + ';');
   tokenSheet.replaceSync(':root { ' + lines.join(' ') + ' }');
-  const theme = THEMES.some((t) => t.id === current.theme) ? current.theme : 'default';
   if (theme === 'default') skinLink.removeAttribute('href');
   else skinLink.setAttribute('href', 'css/skins/' + theme + '.css');
   const root = document.documentElement;
   for (const t of THEMES) root.classList.toggle('lc-skin-' + t.id, t.id === theme);
   root.classList.toggle('lc-scheme-light', current.mode === 'light');
   root.classList.toggle('lc-scheme-dark', current.mode !== 'light');
+  setGarden(garden);
 }
 
 // The user's display settings (settings.json `display`), over any theme.
@@ -166,4 +178,5 @@ export function applyDisplay(display) {
   displaySheet.replaceSync(':root { --lc-text-scale: ' + (size / 16) + ';' + (d.motion === false ? ' --lc-motion: 0;' : '') + ' }');
   document.documentElement.classList.toggle('lc-density-compact', d.density === 'compact');
   document.documentElement.classList.toggle('lc-density-cozy', d.density !== 'compact');
+  gardenMotion(d.motion !== false);
 }

@@ -114,4 +114,12 @@ export const api = {
   saveFolder: () => call('save_folder'),
   pickSaveFolder: () => call('pick_save_folder'),
   openLink: (url) => call('open_link', { url }),
+  // Privacy (privacy.rs): the capture shield learns whether a live secret chat is on
+  // screen; copying from secret or encrypted chats stays out of clipboard history.
+  shieldHint: (secret) => call('shield_hint', { secret: !!secret }),
+  copyText: (text, sensitive) => call('copy_text', { text, sensitive: !!sensitive }),
+  // What Rust sent where this session (netlog.rs): [{ host, requests, last, what }].
+  netLog: () => call('net_log'),
+  // Debug builds only: drop the gateway as a lost network would, to watch it resume.
+  debugDropGateway: () => call('debug_drop_gateway'),
 };

@@ -135,6 +135,7 @@ async fn connection(token: &str, session: &mut Option<Session>, events: &mpsc::S
     }
     headers.insert("Origin", HeaderValue::from_static("https://discord.com"));
 
+    crate::netlog::note(&url);
     let socket = tokio::select! {
         r = tokio_tungstenite::connect_async(request) => match r { Ok((s, _)) => s, Err(_) => return Ended::Retry },
         _ = stop.changed() => return Ended::Stopped,
@@ -166,6 +167,11 @@ async fn connection(token: &str, session: &mut Option<Session>, events: &mpsc::S
                 continue;
             }
             Some(frame) = outbound.recv(), if ready => {
+                // Debug builds: a test frame drops the connection without a close, as a lost
+                // network would, so resuming can be tried in seconds (main.rs debug_drop_gateway).
+                if cfg!(debug_assertions) && frame.get("lc_debug_drop").is_some() {
+                    return Ended::Retry;
+                }
                 if write.send(Message::Text(frame.to_string().into())).await.is_err() {
                     return Ended::Retry;
                 }

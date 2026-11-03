@@ -104,6 +104,7 @@ pub fn feed() -> String {
 }
 
 pub async fn check(http: &reqwest::Client, current: &str) -> Result<Option<Release>, String> {
+    crate::netlog::note(&feed());
     let answer = http
         .get(feed())
         .header("Accept", "application/vnd.github+json")
@@ -137,6 +138,7 @@ pub async fn download(release: &Release, current: &str, progress: impl Fn(u64, u
         }))
         .build()
         .map_err(|e| e.to_string())?;
+    crate::netlog::note(&release.asset);
     let mut answer = client.get(&release.asset).header("User-Agent", format!("LockCord/{current}")).send().await.map_err(|e| format!("The download failed: {e}"))?;
     if !answer.status().is_success() {
         return Err(format!("The download failed ({}).", answer.status().as_u16()));
@@ -182,6 +184,7 @@ pub fn still_matches(path: &Path, expected: &[u8; 32]) -> bool {
 }
 
 /// Starts the installer (per user, so no administrator prompt).
+#[cfg(windows)]
 pub fn start_installer(path: &Path) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -193,6 +196,13 @@ pub fn start_installer(path: &Path) -> Result<(), String> {
         return Err("Windows couldn't start the installer.".into());
     }
     Ok(())
+}
+
+/// Elsewhere there's no installer to start: `update_install` opens the release page instead
+/// (`installed` is false there).
+#[cfg(not(windows))]
+pub fn start_installer(_path: &Path) -> Result<(), String> {
+    Err("Updating in place isn't available here; the release page has the new version.".into())
 }
 
 #[cfg(test)]

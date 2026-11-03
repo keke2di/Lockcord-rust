@@ -1,17 +1,18 @@
 // The settings window: Themes first (a theme is the whole look; each has light and dark colour
 // schemes, and picking one applies at once), then the app's own pages (tools.js).
 
-import { h, icon, ICONS } from './dom.js';
+import { h, icon, ICONS, MOD } from './dom.js';
 import { radioCards, slider, toggle } from './controls.js';
 import { parse, render } from './markdown.js';
 import { avatar, displayName } from './people.js';
 import { THEMES, schemesOf } from './theme.js';
-import { renderApp, renderE2e, renderGuard, renderPurge, renderTranslation, renderVoice } from './tools.js';
+import { renderApp, renderE2e, renderGuard, renderPrivacy, renderPurge, renderTranslation, renderVoice } from './tools.js';
 
 // The pages, their icons, and the sections the nav jumps to.
 const PAGES = [
   ['themes', 'Themes', 'palette', [['theme', 'Theme'], ['colours', 'Colours'], ['display', 'Display']]],
   ['app', 'App', 'gear', []],
+  ['privacy', 'Privacy', 'eye', []],
   ['voice', 'Voice & Video', 'mic', []],
   ['e2e', 'Encrypted DMs', 'lock', []],
   ['translation', 'Translation', 'globe', []],
@@ -143,14 +144,15 @@ export function renderSettings(screen, ctx) {
         { value: 'compact', label: 'Compact', description: 'More messages on screen.' },
       ], d.density === 'compact' ? 'compact' : 'cozy', (density) => { ctx.setDisplay({ density }); draw(); }, 'two')),
       slider({ title: 'Text size', min: 12, max: 20, step: 1, value: d.textSize || 16, marks: [12, 16, 20], format: (n) => n + 'px', onInput: (n) => ctx.setDisplay({ textSize: n }) }),
-      toggle('Animations', 'Off keeps everything still (Windows’ “reduce motion” turns them off too).', d.motion !== false, (motion) => ctx.setDisplay({ motion })),
-      h('div', { class: 'control-description spaced' }, 'Ctrl+Shift+0 switches to the default theme for a moment, if a theme ever looks wrong.')));
+      toggle('Animations', 'Off keeps everything still (the system’s “reduce motion” turns them off too).', d.motion !== false, (motion) => ctx.setDisplay({ motion })),
+      h('div', { class: 'control-description spaced' }, MOD + '+Shift+0 switches to the default theme for a moment, if a theme ever looks wrong.')));
   };
 
   const purge = () => renderPurge(body, ctx, draw);
   const translation = () => renderTranslation(body, ctx, draw);
   const e2e = () => renderE2e(body, ctx, draw);
   const app = () => renderApp(body, ctx, draw);
+  const privacy = () => renderPrivacy(body, ctx, draw);
   const guard = () => { renderGuard(body, ctx, draw, presetChannel); presetChannel = null; };
 
   // What a page leaves running (Voice & Video's microphone test), stopped when it's redrawn or left.
@@ -162,7 +164,7 @@ export function renderSettings(screen, ctx) {
     drawNav();
     title.textContent = PAGES.find((p) => p[0] === page)[1];
     body.textContent = '';
-    ({ themes, app, voice, e2e, translation, purge, guard })[page]();
+    ({ themes, app, privacy, voice, e2e, translation, purge, guard })[page]();
     scroll.scrollTop = keep;
   };
   // Rust's purge progress redraws the Purge page while it's open.

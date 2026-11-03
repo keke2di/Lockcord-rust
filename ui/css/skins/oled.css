@@ -4,7 +4,7 @@
    how much glow and grain show (--lc-skin-glow, --lc-skin-grain). */
 
 :root {
-    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --lc-radius-s: 8px;
     --lc-radius-m: 12px;
     --lc-radius-l: 18px;
@@ -138,7 +138,7 @@ svg.lc-icon:not([width="12"]):not([width="14"]) path { fill: none; stroke: curre
 .reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: color-mix(in srgb, var(--lc-header) 3%, transparent); border: 1px solid var(--lc-hairline); border-radius: 14px; }
 
 /* Toasts, cards, sign-in, friends, pickers, profiles. */
-.toast, .update-card, .ring-card { background: color-mix(in srgb, var(--lc-popout) 92%, transparent); backdrop-filter: blur(12px); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 999px; }
+.toast, .update-card, .ring-card { background: color-mix(in srgb, var(--lc-popout) 92%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 999px; }
 .update-card, .ring-card { border-radius: 18px; }
 .signin { background: transparent; }
 .signin-card { background: linear-gradient(180deg, color-mix(in srgb, var(--lc-popout) 94%, var(--lc-header)), var(--lc-popout)); border: 1px solid color-mix(in srgb, var(--lc-header) 8%, transparent); border-radius: 22px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 80px color-mix(in srgb, var(--lc-brand) 12%, transparent); }

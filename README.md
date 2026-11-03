@@ -33,6 +33,20 @@ talks to Discord's API and gateway itself.
 - **Purge and Guard**: delete your own messages by channel and filter, or guard a channel with
   a trigger word or a time limit. Paced, so Discord sees no burst.
 - **Translation** per chat, both ways (through Google; never for secret chats or encrypted DMs).
+- **Privacy tools** (Settings → Privacy):
+  - **Screen capture shield**: screenshots, recorders and screen sharing leave LockCord's window
+    out while an encrypted DM or a secret chat is on screen (or always).
+  - **Ghost mode**, everywhere or per chat (the ghost in a chat's header): nobody sees you
+    typing, and Discord isn't told what you read.
+  - **Clean photos and links**: the location (GPS), camera, time and other metadata come out of
+    JPEG, PNG and WebP images before they're uploaded (a photo keeps its rotation), and
+    tracking parameters (`utm_…`, `fbclid`, `gclid`, YouTube's and Spotify's `si`, …) come out of
+    links you send. Optionally generic file names, and links sent without previews.
+  - **Panic key**: one global shortcut hides LockCord in the tray and mutes your
+    microphone.
+  - **Protected clipboard**: text copied from a secret chat or an encrypted DM stays out of
+    Windows' clipboard history and cloud clipboard, and is cleared after 30 seconds.
+  - **What LockCord sends**: every host LockCord contacted this session, with a request count.
 - **Themes**: seven complete looks (LockCord, Midnight Pro, Blossom, Windows XP, Aero Glass,
   Sakura Retro, Minimal), each changing shapes, frames, buttons, icons and animations, with its own
   light and dark colour schemes. Text size, compact messages and animations can be set on top.
@@ -56,6 +70,10 @@ this computer only (never roaming to other machines) and encrypted for your Wind
 Calls connect to Discord's voice servers directly, as Discord's own app does, so Discord sees your
 IP address in a call. The update check asks `api.github.com` (with no token or anything about
 you), and can be turned off.
+
+The protected clipboard keeps copied secrets out of clipboard history and sync. It doesn't stop
+programs running as your user account, which can read what LockCord keeps. Ghost mode doesn't hide that you're
+online: set your status to Invisible for that.
 
 ### What encrypted DMs don't protect
 

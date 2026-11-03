@@ -1,5 +1,5 @@
 # Serein's discord-voice crate (MIT OR Apache-2.0, https://github.com/ViceVerse-cz/Serein),
-# adapted for LockCord: Windows only (the macOS and Linux capture modules are left out) and built
+# adapted for LockCord: Windows and macOS (the Linux capture modules are left out) and built
 # against small copies of the Serein crates it used (support/). Versions as Serein pins them.
 [package]
 name = "discord-voice"
@@ -44,3 +44,15 @@ unsafe_code = "deny"
 windows-capture = "=2.0.1"
 windows = { version = "=0.61.3", features = ["Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_Media_DirectShow", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Graphics_Gdi", "Win32_System_Ole", "Win32_Media_Audio", "Win32_System_Threading", "Win32_Security"] }
 windows-core = "=0.61.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "=10.0.3", default-features = false, features = ["macos_14_0"] }
+objc2 = "=0.6.4"
+block2 = "=0.6.2"
+objc2-av-foundation = { version = "=0.3.2", default-features = false, features = ["std", "AVCaptureDevice", "AVCaptureInput", "AVCaptureOutputBase", "AVCaptureSession", "AVCaptureSessionPreset", "AVCaptureVideoDataOutput", "AVMediaFormat", "AVVideoSettings", "block2", "dispatch2", "objc2-core-media"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSDictionary", "NSObject", "NSString", "NSValue"] }
+objc2-core-media = { version = "=0.3.2", default-features = false, features = ["std", "bitflags", "objc2", "objc2-core-video", "CMBase", "CMTime", "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer"] }
+objc2-core-video = { version = "=0.3.2", default-features = false, features = ["std", "bitflags", "objc2", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFBase", "CFArray", "CFDictionary", "CFNumber", "CFString"] }
+objc2-video-toolbox = { version = "=0.3.2", default-features = false, features = ["std", "bitflags", "objc2", "objc2-core-media", "objc2-core-video", "VTBase", "VTErrors", "VTSession", "VTCompressionProperties", "VTCompressionSession"] }
+dispatch2 = "=0.3.1"

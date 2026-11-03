@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into LockCord.app's Info.plist by the Tauri bundler: why LockCord asks for the
+     microphone, camera and screen recording (only when you use them in a call). -->
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LockCord uses your microphone when you join or answer a call.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>LockCord uses your camera only when you turn it on in a call.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>LockCord uses screen recording to share the screen or window you pick in a call.</string>
+</dict>
+</plist>

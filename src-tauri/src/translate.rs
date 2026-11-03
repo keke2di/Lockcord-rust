@@ -133,6 +133,7 @@ pub fn read_html_answer(answer: &Value) -> (Vec<Option<String>>, String) {
 
 async fn html_batch(http: &reqwest::Client, from: &str, to: &str, lines: &[String]) -> Result<Value, String> {
     let body = json!([[lines.iter().map(|l| escape_html(l)).collect::<Vec<_>>(), from, to], "wt_lib"]);
+    crate::netlog::note(HTML_ENDPOINT);
     let response = http
         .post(HTML_ENDPOINT)
         .header("Content-Type", "application/json+protobuf")
@@ -151,6 +152,7 @@ async fn html_batch(http: &reqwest::Client, from: &str, to: &str, lines: &[Strin
 async fn plain(http: &reqwest::Client, from: &str, to: &str, text: &str) -> Result<Translated, String> {
     let (protected, store) = protect(text);
     let url = url::Url::parse_with_params(PLAIN_ENDPOINT, &[("client", "gtx"), ("sl", from), ("tl", to), ("dt", "t"), ("q", protected.as_str())]).map_err(|e| e.to_string())?;
+    crate::netlog::note(PLAIN_ENDPOINT);
     let response = http
         .get(url)
         .timeout(TIMEOUT)

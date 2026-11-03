@@ -1,9 +1,10 @@
 // LockCord's own title bar (the window has no Windows frame), so a skin can dress it too: the
 // name to drag the window by (double-click maximizes), and minimize, maximize and close. Close
-// goes through the usual close request, so "close to the tray" still applies.
+// goes through the usual close request, so "close to the tray" still applies. On a Mac the system's
+// traffic-light buttons sit at its left instead (main.rs), and the bar leaves room for them.
 
 import { call } from './api.js';
-import { h, icon, ICONS } from './dom.js';
+import { h, icon, ICONS, IS_MAC } from './dom.js';
 
 const window_ = (command) => call('plugin:window|' + command, { label: 'main' }).catch(() => {});
 const GLYPHS = {
@@ -24,6 +25,11 @@ const glyph = (d) => {
 };
 
 export function createTitlebar(title) {
+  document.documentElement.classList.toggle('lc-os-mac', IS_MAC);
+  if (IS_MAC) {
+    return h('div', { class: 'titlebar' },
+      h('div', { class: 'titlebar-title', 'data-tauri-drag-region': '' }, icon(ICONS.lock, 14), h('span', { 'data-tauri-drag-region': '' }, title)));
+  }
   const maximize = h('button', { type: 'button', class: 'titlebar-button', title: 'Maximize', 'aria-label': 'Maximize', onclick: () => window_('toggle_maximize').then(sync) }, glyph(GLYPHS.maximize));
   const bar = h('div', { class: 'titlebar' },
     h('div', { class: 'titlebar-title', 'data-tauri-drag-region': '' }, icon(ICONS.lock, 14), h('span', { 'data-tauri-drag-region': '' }, title)),

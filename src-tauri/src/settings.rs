@@ -48,6 +48,7 @@ pub fn clean_settings(raw: &Value) -> Value {
         // Notifications: "off", "name" (who, not what) or "text" (the message too).
         "notify": raw["notify"].as_str().filter(|n| ["off", "name", "text"].contains(n)).unwrap_or("name"),
         "voice": clean_voice(&raw["voice"]),
+        "privacy": clean_privacy(&raw["privacy"]),
         "translate": {
             "defaults": clean_translation(&raw["translate"]["defaults"]),
             "channels": raw["translate"]["channels"].as_object().map(|m| m.iter()
@@ -62,6 +63,26 @@ pub fn clean_settings(raw: &Value) -> Value {
 // A global shortcut as the window records it ("Ctrl+Shift+M"): at least one modifier and a key.
 fn shortcut(v: &Value) -> &str {
     v.as_str().filter(|k| k.len() <= 40 && k.contains('+') && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+')).unwrap_or("")
+}
+
+// The Privacy page (privacy.rs): the capture shield, ghost mode (all chats, or the ones listed),
+// cleaning what's sent, the panic key, and the sensitive clipboard.
+fn clean_privacy(raw: &Value) -> Value {
+    let flag = |k: &str, default: bool| raw[k].as_bool().unwrap_or(default);
+    json!({
+        "shield": raw["shield"].as_str().filter(|s| ["secure", "always", "off"].contains(s)).unwrap_or("secure"),
+        "ghostTyping": flag("ghostTyping", false),
+        "ghostRead": flag("ghostRead", false),
+        "ghostChats": raw["ghostChats"].as_array().map(|list| list.iter()
+            .filter_map(|c| c.as_str().filter(|c| (1..=20).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_digit())))
+            .take(500).map(|c| json!(c)).collect::<Vec<_>>()).unwrap_or_default(),
+        "cleanUploads": flag("cleanUploads", true),
+        "genericNames": flag("genericNames", false),
+        "cleanLinks": flag("cleanLinks", true),
+        "noEmbeds": flag("noEmbeds", false),
+        "panicKey": shortcut(&raw["panicKey"]),
+        "clipboard": flag("clipboard", true),
+    })
 }
 
 // Voice & Video (call.rs VoiceSettings): devices by their system ids, levels 0-200%, voice
@@ -144,6 +165,23 @@ mod tests {
         assert_eq!(clean_settings(&json!({ "theme": "builtin:../x" }))["theme"], "builtin:dark");
         assert_eq!(clean_settings(&Value::Null)["display"]["textSize"], 16);
         assert_eq!(clean_settings(&Value::Null)["checkUpdates"], true);
+    }
+
+    #[test]
+    fn privacy_settings_come_from_fixed_lists() {
+        let p = clean_settings(&Value::Null)["privacy"].clone();
+        assert_eq!(p["shield"], "secure");
+        assert_eq!(p["cleanUploads"], true);
+        assert_eq!(p["cleanLinks"], true);
+        assert_eq!(p["ghostTyping"], false);
+        assert!(p.get("lockIdle").is_none() && p.get("lockOnStart").is_none(), "the app lock is gone");
+        let p = clean_settings(&json!({ "privacy": { "shield": "weird", "lockIdle": 7, "panicKey": "F12", "ghostChats": ["123", "x", "4567"] } }))["privacy"].clone();
+        assert_eq!(p["shield"], "secure");
+        assert!(p.get("lockIdle").is_none());
+        assert_eq!(p["panicKey"], "", "a key without a modifier");
+        assert_eq!(p["ghostChats"], json!(["123", "4567"]));
+        let p = clean_settings(&json!({ "privacy": { "shield": "always", "panicKey": "Ctrl+Shift+F12" } }))["privacy"].clone();
+        assert_eq!((p["shield"].as_str(), p["panicKey"].as_str()), (Some("always"), Some("Ctrl+Shift+F12")));
     }
 
     #[test]

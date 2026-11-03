@@ -97,12 +97,28 @@ pub fn reserve(dir: &Path, name: &str) -> Result<(PathBuf, fs::File), String> {
 }
 
 /// The Mark-of-the-Web, as browsers write it, without the address (it would leave the channel's
-/// attachment link on disk).
+/// attachment link on disk). On macOS that's the quarantine attribute, so Gatekeeper checks a
+/// saved app or script before it first runs.
 pub fn mark_from_internet(path: &Path) {
     if cfg!(windows) {
         let mut stream = path.as_os_str().to_owned();
         stream.push(":Zone.Identifier");
         let _ = fs::write(PathBuf::from(stream), "[ZoneTransfer]\r\nZoneId=3\r\n");
+    }
+    #[cfg(target_os = "macos")]
+    quarantine(path);
+}
+
+#[cfg(target_os = "macos")]
+fn quarantine(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(file) = std::ffi::CString::new(path.as_os_str().as_bytes()) else { return };
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    // Downloaded (0x01) by a non-browser app (0x80), when, by whom; no origin URL.
+    let value = format!("0081;{secs:08x};LockCord;");
+    // SAFETY: both strings are valid for the call; the value is passed with its length.
+    unsafe {
+        libc::setxattr(file.as_ptr(), c"com.apple.quarantine".as_ptr(), value.as_ptr().cast(), value.len(), 0, 0);
     }
 }
 

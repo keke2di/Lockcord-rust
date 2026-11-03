@@ -4,7 +4,7 @@
    motion kept to a short fade. Its schemes (theme.js: Ultra Dark, Ultra Dark Cyan) set the accent. */
 
 :root {
-    --lc-font: 'Segoe UI', system-ui, sans-serif;
+    --lc-font: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --lc-radius-s: 2px;
     --lc-radius-m: 4px;
     --lc-radius-l: 6px;
@@ -36,7 +36,7 @@
 /* One black surface, white outlines, nothing see-through. */
 html, body, .app, .app > :is(.rail, .sidebar, .chat, .member-panel), .user-panel, .settings-screen, .settings-nav, .settings-main,
 .popup, .modal, .dropdown-list, .autocomplete, .emoji-picker, .profile-popout, .toast, .update-card, .ring-card, .call-slot, .voice-pane-body {
-    background: #000 !important; backdrop-filter: none !important;
+    background: #000 !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .titlebar { border-bottom: 2px solid var(--lc-header); }
 .titlebar-button:hover { background: var(--lc-header); color: #000; }

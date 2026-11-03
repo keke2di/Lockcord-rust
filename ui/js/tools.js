@@ -2,7 +2,7 @@
 // Rust does the scanning and deleting, through its one paced queue; these pages pick what, show
 // how far it got, and ask before anything is deleted.
 
-import { h, icon, ICONS } from './dom.js';
+import { h, icon, ICONS, IS_MAC } from './dom.js';
 import { dropdown, radioCards, slider, toggle } from './controls.js';
 import { shortCode } from './trust.js';
 
@@ -26,12 +26,12 @@ export function renderApp(body, ctx, redraw) {
   const s = ctx.appSettings();
   body.appendChild(section('Window',
     toggle('Close to the tray', 'Closing the window keeps LockCord running in the tray, so messages and Guard keep working. Quit from the tray icon.', s.closeToTray !== false, (on) => ctx.saveAppSetting({ closeToTray: on })),
-    toggle('Start with Windows', null, !!s.autostart, (on) => ctx.saveAppSetting({ autostart: on })),
-    toggle('Start hidden', 'When started with Windows, only the tray icon shows.', !!s.startHidden, (on) => ctx.saveAppSetting({ startHidden: on }))));
+    toggle(IS_MAC ? 'Open at login' : 'Start with Windows', null, !!s.autostart, (on) => ctx.saveAppSetting({ autostart: on })),
+    toggle('Start hidden', IS_MAC ? 'When opened at login, only the menu bar icon shows.' : 'When started with Windows, only the tray icon shows.', !!s.startHidden, (on) => ctx.saveAppSetting({ startHidden: on }))));
   body.appendChild(section('Notifications',
     radioCards([
       { value: 'name', label: 'Who it’s from', description: 'Not what they said. Encrypted DMs only say that one came.' },
-      { value: 'text', label: 'Who, and the message', description: 'The text shows in Windows’ notifications, and stays in their history. Never for encrypted DMs.' },
+      { value: 'text', label: 'Who, and the message', description: 'The text shows in the system’s notifications, and stays in their history. Never for encrypted DMs.' },
       { value: 'off', label: 'Off', description: null },
     ], s.notify || 'name', (v) => { ctx.saveAppSetting({ notify: v }); redraw(); }),
     h('div', { class: 'control-description spaced' }, 'For DMs, and for mentions in servers; not for muted chats, nor the chat on screen. Secret chats never notify.')));
@@ -50,11 +50,93 @@ export function renderApp(body, ctx, redraw) {
     status));
   const folder = h('span', { class: 'file-pick-name' }, '…');
   ctx.saveFolder().then((r) => { folder.textContent = (r && r.folder) || 'LockCord'; }).catch(() => {});
+  // Debug builds only: test that Discord's connection resumes after a drop, without waiting for a
+  // real network loss.
+  if (ctx.debug) {
+    body.appendChild(section('Developer',
+      block('Drop the connection', 'Cuts Discord’s live connection as a lost network would. It should come back and resume within a few seconds, with nothing missed.',
+        h('button', { type: 'button', class: 'button secondary', onclick: () => ctx.debugDrop().then(() => ctx.toast('Dropped. Watch it reconnect.'), (e) => ctx.toast(String(e))) }, 'Drop now'))));
+  }
   body.appendChild(section('Saving files',
     block('Folder', '“Save media” in a message’s menu puts its files here. Programs and scripts get “.download” added, and every file is marked as from the internet.',
       h('div', { class: 'file-pick' }, folder, h('button', { type: 'button', class: 'button secondary', onclick: () => {
         ctx.pickSaveFolder().then((r) => { if (r) redraw(); }).catch((e) => ctx.toast(String(e)));
       } }, 'Change…')))));
+}
+
+// A global shortcut: a modifier and a key ("Ctrl+Shift+KeyM"), recorded from the next key press.
+function shortcutPicker(current, set, ctx, redraw) {
+  const button = h('button', { type: 'button', class: 'button secondary', onclick: () => {
+    button.textContent = 'Press keys… (Esc cancels)';
+    const take = (e) => {
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+      e.preventDefault();
+      document.removeEventListener('keydown', take, true);
+      const mods = [e.metaKey && 'Cmd', e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean);
+      if (e.code !== 'Escape' && mods.length) set([...mods, e.code].join('+'));
+      else if (e.code !== 'Escape') ctx.toast(IS_MAC ? 'Use Cmd, Ctrl, Shift or Option with the key.' : 'Use Ctrl, Shift or Alt with the key.');
+      redraw();
+    };
+    document.addEventListener('keydown', take, true);
+  } }, current ? current.replace(/Key|Digit/g, '') : 'Not set');
+  return h('div', { class: 'file-pick' }, button,
+    current ? h('button', { type: 'button', class: 'button link', onclick: () => { set(''); redraw(); } }, 'Clear') : null);
+}
+
+// --- Privacy --------------------------------------------------------------------------------------
+
+// ctx: { privacy(), setPrivacy(change), toast }
+export function renderPrivacy(body, ctx, redraw) {
+  const p = ctx.privacy();
+  const set = (change) => { ctx.setPrivacy(change); redraw(); };
+
+  body.appendChild(section('Screen capture',
+    h('div', { class: 'control-description' }, 'Screenshots, recorders and screen sharing (Discord’s, OBS, Snipping Tool) leave LockCord’s window out: they show what’s behind it instead.'),
+    radioCards([
+      { value: 'secure', label: 'In private chats', description: 'While an encrypted DM or a secret chat is on screen.' },
+      { value: 'always', label: 'Always', description: 'LockCord never shows in a capture.' },
+      { value: 'off', label: 'Off', description: null },
+    ], p.shield || 'secure', (shield) => set({ shield }))));
+
+  const chats = (p.ghostChats || []).length;
+  body.appendChild(section('Ghost mode',
+    toggle('Don’t show that I’m typing', 'Everywhere. Nobody sees “… is typing” from you.', !!p.ghostTyping, (ghostTyping) => set({ ghostTyping })),
+    toggle('Don’t send read marks', 'Everywhere. Chats still clear here, but Discord isn’t told what you read, so your other devices keep them unread.', !!p.ghostRead, (ghostRead) => set({ ghostRead })),
+    h('div', { class: 'control-description spaced' }, 'For one chat only, use the ghost button in its header (both at once).'),
+    chats ? h('div', { class: 'file-pick' }, h('span', { class: 'control-description' }, 'Ghost mode is on in ' + chats + (chats === 1 ? ' chat' : ' chats')),
+      h('button', { type: 'button', class: 'button link', onclick: () => set({ ghostChats: [] }) }, 'Turn off in all')) : null));
+
+  body.appendChild(section('What you send',
+    toggle('Clean photos', 'Takes out the location (GPS), camera, time and other metadata before a JPEG, PNG or WebP is uploaded. The picture and its rotation stay.', p.cleanUploads !== false, (cleanUploads) => set({ cleanUploads })),
+    toggle('Generic file names', 'Uploads go as “image.jpg”, “video.mp4” or “file.pdf” instead of their own names.', !!p.genericNames, (genericNames) => set({ genericNames })),
+    toggle('Clean links', 'Takes tracking parameters out of links you send (utm_…, fbclid, gclid, YouTube’s and Spotify’s si, …). Code stays as typed.', p.cleanLinks !== false, (cleanLinks) => set({ cleanLinks })),
+    toggle('Send links without previews', 'Your messages’ links show no embed for others.', !!p.noEmbeds, (noEmbeds) => set({ noEmbeds }))));
+
+  body.appendChild(section('Panic key',
+    h('div', { class: 'control-description' }, 'Hides LockCord in the tray at once, from anywhere, and mutes your microphone in a call.'),
+    shortcutPicker(p.panicKey || '', (panicKey) => ctx.setPrivacy({ panicKey }), ctx, redraw)));
+
+  body.appendChild(section('Clipboard',
+    toggle('Protect copied text', (IS_MAC ? 'Text copied from a secret chat or an encrypted DM is marked so clipboard managers and Universal Clipboard leave it alone,' : 'Text copied from a secret chat or an encrypted DM stays out of Windows’ clipboard history (Win+V) and cloud clipboard,') + ' and leaves the clipboard after 30 seconds unless you copied something else.', p.clipboard !== false, (clipboard) => set({ clipboard }))));
+
+  // What LockCord sent where, this session: hosts and counts from Rust, nothing about contents.
+  const table = h('div', { class: 'netlog' });
+  const fill = () => ctx.netLog().then((list) => {
+    table.textContent = '';
+    if (!list.length) { table.appendChild(h('div', { class: 'control-description' }, 'Nothing yet.')); return; }
+    for (const e of list) {
+      table.appendChild(h('div', { class: 'netlog-row' },
+        h('div', { class: 'netlog-host' }, e.host),
+        h('div', { class: 'netlog-what' }, e.what),
+        h('div', { class: 'netlog-count' }, e.requests + (e.requests === 1 ? ' request' : ' requests'))));
+    }
+  }).catch((err) => { table.textContent = String(err); });
+  fill();
+  body.appendChild(section('What LockCord sends',
+    h('div', { class: 'control-description' }, 'Every request LockCord made since it started, by where it went. No analytics, no crash reports, no tracking: unlike Discord’s own app, LockCord never calls Discord’s /science or metrics endpoints.'),
+    table,
+    h('div', { class: 'file-pick' }, h('button', { type: 'button', class: 'button secondary', onclick: fill }, 'Refresh')),
+    h('div', { class: 'control-description spaced' }, 'Not counted here, because the window makes them itself: a secret chat’s signalling with ecdh.chat and its direct connection to the other person, hCaptcha when Discord asks for a captcha, and Discord’s login page when you sign in.')));
 }
 
 // --- Voice & Video --------------------------------------------------------------------------------
@@ -122,24 +204,7 @@ export function renderVoice(body, ctx, redraw) {
     v.mode !== 'ptt' && v.sensitivity !== null ? slider({ title: 'Sensitivity', description: 'Sounds quieter than this aren’t sent.', min: -80, max: 0, step: 1, value: v.sensitivity ?? -55, marks: [-80, -40, 0], format: (n) => n + ' dB', onInput: (n) => saveSoon({ sensitivity: n }) }) : null));
 
   // Global mute and deafen keys: a modifier and a key, working with LockCord in the background.
-  const shortcutButton = (key) => {
-    const current = v[key] || '';
-    const button = h('button', { type: 'button', class: 'button secondary', onclick: () => {
-      button.textContent = 'Press keys… (Esc cancels)';
-      const take = (e) => {
-        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
-        e.preventDefault();
-        document.removeEventListener('keydown', take, true);
-        const mods = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean);
-        if (e.code !== 'Escape' && mods.length) save({ [key]: [...mods, e.code].join('+') });
-        else if (e.code !== 'Escape') ctx.toast('Use Ctrl, Shift or Alt with the key.');
-        redraw();
-      };
-      document.addEventListener('keydown', take, true);
-    } }, current ? current.replace(/Key|Digit/g, '') : 'Not set');
-    return h('div', { class: 'file-pick' }, button,
-      current ? h('button', { type: 'button', class: 'button link', onclick: () => { save({ [key]: '' }); redraw(); } }, 'Clear') : null);
-  };
+  const shortcutButton = (key) => shortcutPicker(v[key] || '', (keys) => save({ [key]: keys }), ctx, redraw);
   body.appendChild(section('Keybinds',
     h('div', { class: 'control-description' }, 'Mute or deafen from anywhere, even with LockCord in the background. Off until you set them.'),
     block('Toggle mute', null, shortcutButton('muteKey')),
@@ -176,7 +241,7 @@ export function renderE2e(body, ctx, redraw) {
   const view = ctx.e2eStatus();
   body.appendChild(h('div', { class: 'notice' },
     h('div', null, 'An encrypted DM is your normal DM with another LockCord user, end-to-end encrypted: Discord stores only ciphertext, and only your two LockCords can read it. The messages stay in the DM, readable later; for a live, off-the-record chat use a secret chat instead.'),
-    h('div', null, 'To turn it on, press “Encrypt” in a DM’s header. LockCord posts its public key there once; their LockCord asks them, and answers once they accept. Your secret key stays on this computer, in Windows Credential Manager, encrypted for your Windows account (it never roams to other machines).'),
+    h('div', null, 'To turn it on, press “Encrypt” in a DM’s header. LockCord posts its public key there once; their LockCord asks them, and answers once they accept. Your secret key stays on this computer, ' + (IS_MAC ? 'in your macOS Keychain.' : 'in Windows Credential Manager, encrypted for your Windows account (it never roams to other machines).')),
     h('div', null, 'Compare the 60-digit safety code with them once, on a call. If their key ever changes, LockCord stops sending to them until you check it. Text only for now: files go unencrypted, and only on purpose. There is no forward secrecy: anyone who later got your secret key could read your past encrypted DMs, so “Turn off” when you’re done with someone.')));
   if (view.problem) body.appendChild(h('div', { class: 'notice warn' }, view.problem));
   const contacts = (view.contacts || []).filter((c) => c.status !== 'off');

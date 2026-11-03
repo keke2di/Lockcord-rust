@@ -3,7 +3,7 @@
 // (src-tauri/src/main.rs), never from Discord's page.
 
 import { api, media, on } from './api.js';
-import { formatTime, h, icon, ICONS, snowflakeTime } from './dom.js';
+import { formatTime, h, icon, ICONS, snowflakeTime, IS_MAC, MOD } from './dom.js';
 import { REACTIONS, replaceShortcodes } from './emoji.js';
 import { createPicker, withRecent } from './picker.js';
 import { avatarWithStatus, displayName, nameOf, remember, user } from './people.js';
@@ -103,6 +103,9 @@ function screen(...children) {
   root.textContent = '';
   for (const c of children) root.appendChild(c);
 }
+
+let booted = false;
+
 
 // --- Sign-in ---------------------------------------------------------------------------------
 
@@ -560,6 +563,25 @@ function refreshGuarded() {
   api.guardList().then((list) => { guarded.clear(); for (const r of list) guarded.add(r.channel); refresh(); }).catch(() => {});
 }
 
+// Ghost mode for this chat (privacy.rs): no typing indicator, no read marks sent to Discord.
+function ghostButton(dm) {
+  const p = prefs.settings.privacy || {};
+  const everywhere = !!(p.ghostTyping && p.ghostRead);
+  const list = p.ghostChats || [];
+  const on = everywhere || list.includes(dm.id);
+  return h('button', {
+    type: 'button', class: 'header-button' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false', 'aria-label': 'Ghost mode',
+    title: everywhere ? 'Ghost mode is on everywhere (Settings → Privacy)' : on ? 'Ghost mode here: nobody sees you typing, Discord isn’t told you read. Click to turn off.' : 'Ghost mode here: don’t show typing, don’t send read marks',
+    disabled: everywhere,
+    onclick: () => {
+      const next = on ? list.filter((id) => id !== dm.id) : [...list, dm.id];
+      saveSettings({ privacy: { ...p, ghostChats: next } });
+      showToast(on ? 'Ghost mode off here.' : 'Ghost mode on here: no typing indicator, no read marks.');
+      refresh();
+    },
+  }, icon(ICONS.ghost, 22));
+}
+
 function shieldButton(dm) {
   const on = guarded.has(dm.id);
   return h('button', {
@@ -762,6 +784,7 @@ function drawHeader(dm) {
     }
     header.appendChild(pinsButton(dm));
     header.appendChild(globeButton(dm));
+    header.appendChild(ghostButton(dm));
     header.appendChild(shieldButton(dm));
     if (!dm.thread) {
       header.appendChild(h('button', {
@@ -787,6 +810,7 @@ function drawHeader(dm) {
   }
   for (const b of calls.headerButtons(dm)) header.appendChild(b);
   header.appendChild(globeButton(dm));
+  header.appendChild(ghostButton(dm));
   header.appendChild(shieldButton(dm));
   if (live) header.appendChild(secretPill(secret.canSend(dm.id), c.verification && c.verification.sas));
   if (peer) header.appendChild(encryptionControl(dm));
@@ -1071,8 +1095,11 @@ function editDiscord(m) {
 // Discord deletes go through Rust's one delete queue (deletion.rs), paced as Lazer did.
 const BULK_DELETE = true;
 
-function copy(text) {
-  navigator.clipboard.writeText(text).then(() => showToast('Copied.'), () => showToast('Couldn’t copy.'));
+// Text from a secret chat or an encrypted DM is sensitive: Rust keeps it out of clipboard history
+// and clears it after a while (Settings → Privacy).
+function copy(text, sensitive) {
+  const careful = sensitive && (prefs.settings.privacy || {}).clipboard !== false;
+  api.copyText(text, sensitive).then(() => showToast(careful ? 'Copied. It leaves the clipboard in 30 s.' : 'Copied.'), () => showToast('Couldn’t copy.'));
 }
 
 // A popup's anchor at the point a menu was opened.
@@ -1107,7 +1134,7 @@ function discordMenu(m, e) {
     ['Add Reaction', () => pickReaction(m, pointOf(e))],
     canReplyOnDiscord(m.channel_id) && ['Reply', () => replyToDiscord(m)],
     mine && !isForward(m) && ['Edit Message', () => editDiscord(m)],
-    m.content && ['Copy Text', () => copy(m.content)],
+    m.content && ['Copy Text', () => copy(m.content, !!m.lc_e2e)],
     (m.attachments || []).length && ['Save media', () => saveMedia(m)],
     canPin(m.channel_id) && [m.pinned ? 'Unpin Message' : 'Pin Message', () => pinMessage(m, !m.pinned)],
     ['Copy Message Link', () => copy('https://discord.com/channels/' + (m.guild_id || '@me') + '/' + m.channel_id + '/' + m.id)],
@@ -1124,7 +1151,7 @@ function secretMenu(r, e) {
     ['Add Reaction', () => openReactionPicker(r.id, pointOf(e))],
     ['Reply', () => { state.replyTo = r; refresh(); textarea.focus(); }],
     mine && r.kind === 'text' && secret.canEdit(r.id) && ['Edit Message', () => { state.editing = r.id; state.discordEditing = null; refresh(); }],
-    r.text && ['Copy Text', () => copy(r.text)],
+    r.text && ['Copy Text', () => copy(r.text, true)],
     mine && '-',
     mine && ['Select Message', () => startSelecting('secret:' + r.id)],
     mine && ['Delete Message', (ev) => (ev.shiftKey ? secret.remove(r.id) : confirmDelete(SECRET_DELETE_TEXT, () => secret.remove(r.id))), 'danger'],
@@ -1244,8 +1271,20 @@ function mentionsMe(m, guild) {
   return (m.mention_roles || []).some((id) => mine.includes(id));
 }
 
+// The capture shield (privacy.rs) learns whether a live secret chat is on screen; Rust already
+// knows about encrypted DMs.
+let shieldHinted = null;
+function hintShield(on) {
+  if (shieldHinted === on) return;
+  shieldHinted = on;
+  api.shieldHint(on).catch(() => { shieldHinted = null; });
+}
+
 function draw(toEnd) {
   if (root.firstChild !== mainScreen) return;
+  const onScreen = state.view !== 'friends' && dmById(state.current);
+  const chat = onScreen && secret.in(onScreen.id);
+  hintShield(!!chat && !chat.ended);
   drawSidebar();
   if (state.view === 'friends') { drawFriends(); return; }
   const dm = dmById(state.current);
@@ -1437,6 +1476,8 @@ async function translateAndSend(channelId, text, reply, to) {
 }
 
 function clearComposer() {
+  // Sent: the Sakura Retro garden (garden.js) celebrates.
+  document.dispatchEvent(new Event('lc-sent'));
   textarea.value = '';
   autosize(textarea);
   state.replyTo = null;
@@ -2255,7 +2296,7 @@ async function loadSettings() {
   state.sidePinned = !!prefs.settings.sidePinned;
   mainScreen.classList.toggle('side-pinned', state.sidePinned);
   state.showMemberList = prefs.settings.memberList !== false;
-  if (safeNow) showToast('Safe mode: the default theme is on. Ctrl+Shift+0 brings yours back.');
+  if (safeNow) showToast('Safe mode: the default theme is on. ' + MOD + '+Shift+0 brings yours back.');
   refresh();
 }
 
@@ -2335,6 +2376,11 @@ function openSettings(start) {
       saveSettings({ display });
       applyDisplay(display);
     },
+    privacy: () => prefs.settings.privacy || {},
+    setPrivacy: (change) => { saveSettings({ privacy: { ...(prefs.settings.privacy || {}), ...change } }); },
+    netLog: () => api.netLog(),
+    debug: !!prefs.debug,
+    debugDrop: () => api.debugDropGateway(),
     toast: showToast,
     close: () => closeSettings(),
   });
@@ -2351,11 +2397,11 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settings
 // Ctrl+Shift+0 switches to the default theme for this session, and back (`--safe-mode` starts
 // that way): a way out if a theme ever makes the window hard to use.
 document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && e.shiftKey && (e.key === '0' || e.code === 'Digit0')) {
+  if ((IS_MAC ? e.metaKey : e.ctrlKey) && e.shiftKey && (e.key === '0' || e.code === 'Digit0')) {
     e.preventDefault();
     safeNow = !safeNow;
     applyTheme(safeNow ? null : themeFromPrefs(), safeNow);
-    showToast(safeNow ? 'Default theme, for now. Ctrl+Shift+0 brings yours back.' : 'Your theme is back: ' + currentTheme().name + '.');
+    showToast(safeNow ? 'Default theme, for now. ' + MOD + '+Shift+0 brings yours back.' : 'Your theme is back: ' + currentTheme().name + '.');
   }
 });
 
@@ -2363,10 +2409,15 @@ document.addEventListener('keydown', (e) => {
 
 loadSettings();
 
-api.status().then((s) => {
-  if (!s.signedIn) { showSignIn(); return; }
-  state.signedIn = true;
-  state.me = s.me;
-  if (s.gateway === 'connected' || (s.dms && s.dms.length)) { takeReady(s); state.gateway = s.gateway; showMain(); }
-  else showConnecting();
-}).catch(() => showSignIn());
+function boot() {
+  booted = true;
+  api.status().then((s) => {
+    if (!s.signedIn) { showSignIn(); return; }
+    state.signedIn = true;
+    state.me = s.me;
+    if (s.gateway === 'connected' || (s.dms && s.dms.length)) { takeReady(s); state.gateway = s.gateway; showMain(); }
+    else showConnecting();
+  }).catch(() => showSignIn());
+}
+
+boot();

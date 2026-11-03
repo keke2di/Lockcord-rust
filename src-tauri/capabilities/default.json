@@ -84,6 +84,8 @@
     "allow-update-check",
     "allow-update-dismiss",
     "allow-update-install",
-    "allow-member-search", "allow-gif-trending", "allow-gif-search", "allow-gif-favorites"
+    "allow-member-search", "allow-gif-trending", "allow-gif-search", "allow-gif-favorites",
+    "allow-shield-hint", "allow-copy-text",
+    "allow-net-log", "allow-debug-drop-gateway"
   ]
 }

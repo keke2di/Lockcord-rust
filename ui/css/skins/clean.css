@@ -3,7 +3,7 @@
    Its palettes (theme.js: Blossom, Peach, Lilac) are light. */
 
 :root {
-    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --lc-radius-s: 10px;
     --lc-radius-m: 16px;
     --lc-radius-l: 24px;
@@ -28,7 +28,7 @@ html, body { background: linear-gradient(135deg, var(--lc-gradient-a), var(--lc-
 .app { background: transparent; }
 .app > :is(.rail, .sidebar, .chat, .member-panel) { background: var(--lc-chat-bg); }
 .app > .sidebar { background: var(--lc-sidebar); }
-.app > .rail { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); backdrop-filter: blur(12px); }
+.app > .rail { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .sidebar, .member-panel, .search-panel, .chat-header, .guild-title, .user-panel { border: 0; }
 .chat-header { padding-top: 6px; }
 .header-name { font-size: 1.125rem; font-weight: 800; letter-spacing: -0.01em; }

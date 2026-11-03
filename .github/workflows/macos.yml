@@ -1,0 +1,114 @@
+# The macOS build: one universal LockCord.app (Apple Silicon and Intel) in a .dmg, ad-hoc signed
+# (no Apple developer account: the first open needs System Settings → Privacy & Security → Open
+# Anyway). Run by hand, or for a version tag, which also attaches the .dmg to that tag's release.
+name: macOS build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: 'Also run cargo test (a second full compile)'
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+    # The branch the macOS port is tried on (a workflow only on a branch can't be run by hand).
+    branches: ['macos-build']
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-15
+    # The repo is private: Mac minutes count 10x against the free allowance, so builds stay lean.
+    timeout-minutes: 60
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      # Thin LTO and parallel codegen: a much shorter build than the Windows release profile.
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust for both Mac architectures
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Build tools (NASM for openh264 on Intel; CMake for Opus)
+        run: |
+          brew list nasm >/dev/null 2>&1 || brew install nasm
+          cmake --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Tauri CLI
+        run: npm install -g @tauri-apps/cli@2.12.4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: macos-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: macos-
+
+      - name: Tests
+        if: github.event_name == 'workflow_dispatch' && inputs.tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Build the universal app and dmg
+        working-directory: src-tauri
+        run: tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - name: Check the bundle
+        id: bundle
+        run: |
+          set -euo pipefail
+          OUT=src-tauri/target/universal-apple-darwin/release/bundle
+          APP="$OUT/macos/LockCord.app"
+          DMG=$(ls "$OUT"/dmg/*.dmg | head -n 1)
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          lipo -info "$BIN"
+          lipo -info "$BIN" | grep -q arm64
+          lipo -info "$BIN" | grep -q x86_64
+          codesign --verify --verbose "$APP"
+          codesign -d --entitlements - "$APP"
+          for key in NSMicrophoneUsageDescription NSCameraUsageDescription NSScreenCaptureUsageDescription LSMinimumSystemVersion; do
+            /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist"
+          done
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+          NAME="LockCord_${VERSION}_universal.dmg"
+          cp "$DMG" "$NAME"
+          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+          echo "dmg=$NAME" >> "$GITHUB_OUTPUT"
+
+      # It has to start and keep running (no account: it waits at the sign-in screen).
+      - name: Launch smoke test
+        run: |
+          "${{ steps.bundle.outputs.bin }}" --profile=ci-smoke > smoke.log 2>&1 &
+          PID=$!
+          sleep 25
+          if ! kill -0 "$PID" 2>/dev/null; then
+            echo "LockCord exited early:"; cat smoke.log; exit 1
+          fi
+          kill "$PID"
+          cat smoke.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.bundle.outputs.dmg }}
+          path: ${{ steps.bundle.outputs.dmg }}
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.bundle.outputs.dmg }}" --clobber

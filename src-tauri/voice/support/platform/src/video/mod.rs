@@ -1,15 +1,23 @@
-//! Live H.264 decoding (camera and Go Live) from Serein's `platform::video`, Windows only:
-//! `picture.rs` and `live_windows.rs` copied unchanged; the attachment decoders are left out.
+//! Live H.264 decoding (camera and Go Live) from Serein's `platform::video`, on Windows and macOS:
+//! `picture.rs`, `live_windows.rs` and `live_apple.rs` copied unchanged, `apple.rs` trimmed to what
+//! live decoding uses; the attachment decoders are left out.
 //! MIT OR Apache-2.0, from Serein (https://github.com/ViceVerse-cz/Serein).
 
 mod picture;
 pub use picture::{Color, Layout, Matrix, Picture, pack_plane};
 
+#[cfg(target_os = "windows")]
 mod media_foundation;
+#[cfg(target_os = "macos")]
+mod apple;
 
 /// Hardware-backed decoding of one live H.264 elementary stream: the Media Foundation decoder
-/// with a DXGI device manager when available.
+/// with a DXGI device manager when available (Windows), VideoToolbox (macOS).
+#[cfg(target_os = "windows")]
 #[path = "live_windows.rs"]
+pub mod live;
+#[cfg(target_os = "macos")]
+#[path = "live_apple.rs"]
 pub mod live;
 
 /// Largest live access unit any backend accepts.

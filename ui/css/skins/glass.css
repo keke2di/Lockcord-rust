@@ -37,7 +37,7 @@ html, body {
 .app > :is(.rail, .sidebar, .chat, .member-panel) {
     position: relative;
     background: color-mix(in srgb, var(--lc-sidebar) calc(var(--lc-glass) * 100%), transparent);
-    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
 }
 .app > .chat { background: color-mix(in srgb, var(--lc-chat-bg) 88%, transparent); }
 .app > :is(.rail, .sidebar, .member-panel)::before {
@@ -49,7 +49,7 @@ html, body {
 .guild-title { background: transparent; border-bottom: 1px solid var(--lc-hairline); }
 
 /* The title bar: black glass with a sheen; the close button glowing red. */
-.titlebar { background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.06) 50%, rgba(0, 0, 0, 0.25) 51%, rgba(0, 0, 0, 0.4)), rgba(10, 25, 45, 0.55); backdrop-filter: blur(12px); }
+.titlebar { background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.06) 50%, rgba(0, 0, 0, 0.25) 51%, rgba(0, 0, 0, 0.4)), rgba(10, 25, 45, 0.55); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .titlebar-title { color: #fff; text-shadow: 0 0 8px rgba(255, 255, 255, 0.6), 0 1px 1px rgba(0, 0, 0, 0.6); font-weight: 400; }
 .titlebar-buttons { padding: 0 6px 6px; align-items: flex-start; }
 .titlebar-button { height: 20px; width: 28px; border: 1px solid rgba(0, 0, 0, 0.6); background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.12) 50%, rgba(0, 0, 0, 0.15) 51%); color: #fff; }
@@ -89,7 +89,7 @@ html, body {
 
 /* Popups and dialogs: glass frames around white content. */
 .popup, .dropdown-list, .autocomplete { background: color-mix(in srgb, var(--lc-popout) 96%, transparent); border: 1px solid color-mix(in srgb, var(--lc-text) 35%, transparent); border-radius: 4px; box-shadow: 2px 3px 10px rgba(0, 0, 0, 0.35); color: var(--lc-text); }
-.modal { background: color-mix(in srgb, var(--lc-sidebar) 70%, transparent); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.5); }
+.modal { background: color-mix(in srgb, var(--lc-sidebar) 70%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.5); }
 .modal-buttons { background: color-mix(in srgb, var(--lc-popout) 90%, transparent); }
 
 /* Calls. */
@@ -101,7 +101,7 @@ html, body {
 
 /* Settings over the wallpaper, as a glass window. */
 .settings-screen { background: transparent; padding: 8px; gap: 8px; }
-.settings-nav { background: color-mix(in srgb, var(--lc-sidebar) 55%, transparent); backdrop-filter: blur(16px); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.55); }
+.settings-nav { background: color-mix(in srgb, var(--lc-sidebar) 55%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.55); }
 .settings-main { background: color-mix(in srgb, var(--lc-chat-bg) 92%, transparent); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.55); overflow: hidden; }
 
 /* --- Motion, icons and the rest of the window --------------------------------------------------- */
@@ -142,10 +142,10 @@ svg.lc-icon { filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85)) drop-shad
 .reply-bar, .file-card, .thread-chip, .poll, .forum-post { background: color-mix(in srgb, var(--lc-chat-bg) 70%, transparent); border: 1px solid rgba(150, 180, 210, 0.8); border-radius: 6px; }
 
 /* Toasts as Vista's glass notifications; sign-in on the wallpaper. */
-.toast, .update-card, .ring-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2) 50%, rgba(220, 235, 250, 0.35) 51%), rgba(200, 225, 245, 0.55); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35); color: #0b2a4a; }
+.toast, .update-card, .ring-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2) 50%, rgba(220, 235, 250, 0.35) 51%), rgba(200, 225, 245, 0.55); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35); color: #0b2a4a; }
 .update-card strong, .ring-name { color: #0b2a4a; }
 .signin { background: transparent; }
-.signin-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.05) 51%), rgba(20, 50, 90, 0.45); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 10px; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.signin-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.05) 51%), rgba(20, 50, 90, 0.45); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 10px; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
 .friends-tab { border-radius: 4px; }
 .friends-tab.selected { background: linear-gradient(180deg, rgba(220, 240, 255, 0.95), rgba(190, 225, 252, 0.95)); box-shadow: inset 0 0 0 1px #84acdd; color: #0b2a4a; }
 .emoji-picker, .profile-popout { background: color-mix(in srgb, var(--lc-popout) 96%, transparent); border: 1px solid color-mix(in srgb, var(--lc-text) 35%, transparent); border-radius: 6px; color: var(--lc-text); }

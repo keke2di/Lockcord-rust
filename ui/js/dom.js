@@ -1,6 +1,12 @@
 // Small DOM helpers. Everything is built with DOM calls and textContent: nothing anyone sends is
 // ever parsed as HTML.
 
+// On a Mac (WKWebView's own user agent says so): Cmd instead of Ctrl, the system's window buttons,
+// macOS wording.
+export const IS_MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
+// The modifier shortcuts use: Cmd on a Mac, Ctrl elsewhere.
+export const MOD = IS_MAC ? 'Cmd' : 'Ctrl';
+
 export function h(tag, props, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {
@@ -55,6 +61,7 @@ export const ICONS = {
   code: 'M8.6 16.6 4 12l4.6-4.6L7.2 6l-6 6 6 6 1.4-1.4Zm6.8 0L20 12l-4.6-4.6L16.8 6l6 6-6 6-1.4-1.4Z',
   folder: 'M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Z',
   eye: 'M12 5c-5 0-9.3 3.1-11 7 1.7 3.9 6 7 11 7s9.3-3.1 11-7c-1.7-3.9-6-7-11-7Zm0 11.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-7a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z',
+  ghost: 'M12 2a8 8 0 0 0-8 8v12l2.67-2 2.66 2L12 20l2.67 2 2.66-2L20 22V10a8 8 0 0 0-8-8ZM9 8.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3Zm6 0a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3Z',
   chevron: 'M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6 1.4-1.4Z',
   dropper: 'M20.7 5.6 18.4 3.3a1 1 0 0 0-1.4 0l-3.1 3.1-1.9-1.9-1.4 1.4 1.4 1.4L4 15.3V20h4.7l8-8 1.4 1.4 1.4-1.4-1.9-1.9 3.1-3.1a1 1 0 0 0 0-1.4ZM7.9 18H6v-1.9l7.4-7.4 1.9 1.9L7.9 18Z',
   gear: 'M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4L10.7 6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z',

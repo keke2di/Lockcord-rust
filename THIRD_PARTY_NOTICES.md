@@ -17,10 +17,13 @@ https://github.com/ViceVerse-cz/Serein, licensed under MIT OR Apache-2.0. Adapte
   mode, `setData` for rqdata), from `crates/platform/src/captcha.js`.
 - `src-tauri/voice/`: Serein's voice crate (`crates/discord-voice`) for calls: the voice WebSocket,
   UDP transport, Opus audio, H.264 camera and screen video, DAVE end-to-end encryption, devices
-  and capture. Copied with its macOS and Linux modules left out; `voice/support/` holds the few
-  pieces of Serein's `client-core`, `model` and `platform` crates it uses (unchanged files:
-  `screen.rs`, `voice_settings.rs`, `audio.rs`, `picture.rs`, `live_windows.rs`). Its license
-  files are in `src-tauri/voice/`.
+  and capture. Copied with its Linux modules left out (the macOS ones, `screen/capture_macos.rs`,
+  `video_encode_macos.rs` and `audio/permission_macos.rs`, unchanged); `voice/support/` holds the
+  few pieces of Serein's `client-core`, `model` and `platform` crates it uses (unchanged files:
+  `screen.rs`, `voice_settings.rs`, `audio.rs`, `picture.rs`, `live_windows.rs`, `live_apple.rs`;
+  `video/apple.rs` trimmed to the VideoToolbox session and NV12 copy that live decoding uses). Its
+  license files are in `src-tauri/voice/`. The macOS entitlements follow Serein's
+  `packaging/macos/voice.entitlements`.
 - `src-tauri/src/call.rs`: the call signalling (gateway opcodes 4, 13, 18, 19, 20, ringing, stream
   keys) follows `crates/discord-gateway/src/voice.rs` and the desktop's call wiring.
 - `src-tauri/vendor/davey` and `src-tauri/vendor/hpke-rs`: dependencies as Serein patches them

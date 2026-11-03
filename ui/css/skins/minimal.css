@@ -3,7 +3,7 @@
    (theme.js: Paper, Ink) are light and dark. */
 
 :root {
-    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --lc-font: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --lc-radius-s: 2px;
     --lc-radius-m: 4px;
     --lc-radius-l: 6px;

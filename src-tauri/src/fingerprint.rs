@@ -3,8 +3,9 @@
 //! Discord's anti-spam judges a user session by how its client presents itself: a custom user
 //! agent, or no `X-Super-Properties` header, reads as an automated tool and gets the account
 //! restricted. So LockCord presents itself as the web client in the browser engine it actually
-//! runs (WebView2, Chromium), with the web client's current build number. Nothing here carries
-//! account data; it's the same for everyone.
+//! runs, with the web client's current build number: Chrome on Windows (WebView2 is Chromium),
+//! Safari on macOS (WKWebView is WebKit). Nothing here carries account data; it's the same for
+//! everyone on the same system.
 //!
 //! Adapted from Serein's `client_core::fingerprint` (MIT OR Apache-2.0, see
 //! THIRD_PARTY_NOTICES.md).
@@ -55,6 +56,7 @@ pub fn set_engine_version(webview_version: &str) {
     let _ = CHROME_MAJOR.set(major.unwrap_or("140").to_owned());
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn chrome_major() -> &'static str {
     CHROME_MAJOR.get().map(String::as_str).unwrap_or("140")
 }
@@ -65,6 +67,7 @@ pub fn build_number() -> u64 {
 
 /// Reads `BUILD_NUMBER` from `window.GLOBAL_ENV` on discord.com/app, the page every browser loads.
 pub async fn refresh_build_number(http: &reqwest::Client) {
+    crate::netlog::note("https://discord.com/app");
     let Ok(response) = http.get("https://discord.com/app").header("User-Agent", user_agent()).send().await else { return };
     let Ok(html) = response.text().await else { return };
     if let Some(number) = parse_build_number(&html) {
@@ -78,6 +81,7 @@ pub fn parse_build_number(html: &str) -> Option<u64> {
     digits.parse().ok().filter(|n| *n > 100_000 && *n < 100_000_000)
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn user_agent() -> String {
     format!(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{}.0.0.0 Safari/537.36",
@@ -85,16 +89,61 @@ pub fn user_agent() -> String {
     )
 }
 
+/// Safari's user agent, as it reads on every Mac (the OS and WebKit versions in it are frozen;
+/// only `Version/` moves, with the Safari that comes with the system).
+#[cfg(target_os = "macos")]
+pub fn user_agent() -> String {
+    format!("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{} Safari/605.1.15", safari_version())
+}
+
+/// The Safari version that comes with this macOS (macOS 26 ships Safari 26, 15 ships 18, …): the
+/// WebKit the login window runs is that one.
+#[cfg(target_os = "macos")]
+fn safari_version() -> &'static str {
+    static VERSION: OnceLock<String> = OnceLock::new();
+    VERSION.get_or_init(|| {
+        let os = std::process::Command::new("/usr/bin/sw_vers").arg("-productVersion").output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
+        safari_for(os.trim())
+    })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn safari_for(macos: &str) -> String {
+    let mut parts = macos.split('.').map(|p| p.parse::<u32>().ok());
+    let (major, minor) = (parts.next().flatten(), parts.next().flatten().unwrap_or(0));
+    let safari = match major {
+        Some(m) if m >= 26 => m,
+        Some(15) => 18,
+        Some(14) => 17,
+        Some(13) => 16,
+        _ => return "18.6".to_owned(),
+    };
+    format!("{safari}.{minor}")
+}
+
+/// What the properties say about the browser and the system.
+#[cfg(not(target_os = "macos"))]
+fn platform() -> (&'static str, &'static str, String, &'static str) {
+    ("Windows", "Chrome", format!("{}.0.0.0", chrome_major()), "10")
+}
+
+#[cfg(target_os = "macos")]
+fn platform() -> (&'static str, &'static str, String, &'static str) {
+    ("Mac OS X", "Safari", safari_version().to_owned(), "10.15.7")
+}
+
 /// The gateway's `identify.properties`, and the decoded `X-Super-Properties`.
 pub fn properties() -> serde_json::Value {
+    let (os, browser, browser_version, os_version) = platform();
     serde_json::json!({
-        "os": "Windows",
-        "browser": "Chrome",
+        "os": os,
+        "browser": browser,
         "device": "",
         "system_locale": system_locale(),
         "browser_user_agent": user_agent(),
-        "browser_version": format!("{}.0.0.0", chrome_major()),
-        "os_version": "10",
+        "browser_version": browser_version,
+        "os_version": os_version,
         "referrer": "",
         "referring_domain": "",
         "referrer_current": "",
@@ -133,10 +182,23 @@ mod tests {
     fn properties_match_the_user_agent() {
         let p = properties();
         assert_eq!(p["browser_user_agent"], user_agent());
-        assert!(user_agent().contains(&format!("Chrome/{}.0.0.0", chrome_major())));
-        assert_eq!(p["browser"], "Chrome");
+        if cfg!(target_os = "macos") {
+            assert!(user_agent().contains(&format!("Version/{} Safari/", p["browser_version"].as_str().unwrap())));
+            assert_eq!(p["browser"], "Safari");
+        } else {
+            assert!(user_agent().contains(&format!("Chrome/{}.0.0.0", chrome_major())));
+            assert_eq!(p["browser"], "Chrome");
+        }
         let decoded = base64::engine::general_purpose::STANDARD.decode(super_properties()).unwrap();
         assert_eq!(serde_json::from_slice::<serde_json::Value>(&decoded).unwrap(), p);
+    }
+
+    #[test]
+    fn safari_follows_macos() {
+        assert_eq!(safari_for("15.5"), "18.5");
+        assert_eq!(safari_for("14.7.1"), "17.7");
+        assert_eq!(safari_for("26.1"), "26.1");
+        assert_eq!(safari_for(""), "18.6");
     }
 
     #[test]

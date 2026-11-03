@@ -9,6 +9,7 @@
 mod auth;
 mod call;
 mod captcha;
+mod clean;
 mod deletion;
 mod desktop;
 mod e2e;
@@ -18,7 +19,9 @@ mod gifs;
 mod guard;
 mod guilds;
 mod media;
+mod netlog;
 mod people;
+mod privacy;
 mod rest;
 mod search;
 mod settings;
@@ -286,6 +289,11 @@ struct App {
     voice: Mutex<call::VoiceSettings>,
     frames: Arc<call::Frames>,
     mic_test: Mutex<Option<discord_voice::audio::Audio>>,
+    // The Privacy page (privacy.rs): its settings, the app lock (lock.rs), and the capture shield:
+    // whether the window says a secret chat is on screen, and whether the shield is up.
+    privacy: Mutex<privacy::Privacy>,
+    secret_on_screen: AtomicBool,
+    shield_up: Mutex<Option<bool>>,
 }
 
 fn profile_arg() -> String {
@@ -1002,7 +1010,11 @@ async fn send_message(state: State<'_, App>, channel_id: String, content: String
     }
     // Only files this client uploaded, each sent once.
     let guild_id;
-    let mut content = content;
+    let (clean_links, no_embeds) = {
+        let p = state.privacy.lock().unwrap();
+        (p.clean_links, p.no_embeds)
+    };
+    let mut content = if clean_links { clean::clean_links(&content) } else { content };
     {
         let mut guard = state.live.lock().unwrap();
         let live = guard.as_mut().ok_or("Not signed in.")?;
@@ -1033,7 +1045,9 @@ async fn send_message(state: State<'_, App>, channel_id: String, content: String
     let rest = rest_of(&state)?;
     let unix_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
     let nonce = fingerprint::nonce(unix_ms, state.nonces.fetch_add(1, Ordering::Relaxed));
-    let mut body = json!({ "content": content, "nonce": nonce, "tts": false, "flags": 0, "mobile_network_type": "unknown" });
+    // Flag 4 (SUPPRESS_EMBEDS): links go without previews, when that's on.
+    let flags = if no_embeds { 4 } else { 0 };
+    let mut body = json!({ "content": content, "nonce": nonce, "tts": false, "flags": flags, "mobile_network_type": "unknown" });
     if !attachments.is_empty() {
         body["attachments"] = attachments.iter().enumerate().map(|(i, a)| json!({ "id": i.to_string(), "filename": a.filename, "uploaded_filename": a.uploaded_filename })).collect();
     }
@@ -1132,6 +1146,7 @@ async fn edit_message(state: State<'_, App>, channel_id: String, message_id: Str
     if content.trim().is_empty() || content.chars().count() > MAX_CONTENT {
         return Err("Nothing to save, or too long.".into());
     }
+    let content = if state.privacy.lock().unwrap().clean_links { clean::clean_links(&content) } else { content };
     let content = {
         let guard = state.live.lock().unwrap();
         let live = guard.as_ref().ok_or("Not signed in.")?;
@@ -1172,7 +1187,7 @@ fn load_e2e(app: &AppHandle, state: &App, me: &str) -> E2eState {
             Ok(book) => (book, None),
             Err(e) => (e2e::Book::default(), Some(e)),
         },
-        (None, _) if !pinned.is_empty() => (e2e::Book::default(), Some("Your encryption key is missing from Windows Credential Manager.".to_owned())),
+        (None, _) if !pinned.is_empty() => (e2e::Book::default(), Some(if cfg!(target_os = "macos") { "Your encryption key is missing from the macOS Keychain." } else { "Your encryption key is missing from Windows Credential Manager." }.to_owned())),
         _ => (e2e::Book::default(), None),
     };
     // The cleared "compared" marks are kept, so the notice comes once.
@@ -1584,8 +1599,9 @@ fn notify_call(app: &AppHandle, state: &App, live: &Live, channel: &str) {
         let r = &d["recipients"][0];
         r["global_name"].as_str().or(r["username"].as_str()).unwrap_or("Someone").to_owned()
     }).unwrap_or_else(|| "Someone".to_owned());
+    let title = format!("{who} is calling");
     use tauri_plugin_notification::NotificationExt;
-    let _ = app.notification().builder().title(format!("{who} is calling")).body("Answer in LockCord").show();
+    let _ = app.notification().builder().title(title).body("Answer in LockCord").show();
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
     }
@@ -2385,6 +2401,10 @@ async fn typing(state: State<'_, App>, channel_id: String) -> Result<(), String>
     if !is_id(&channel_id) {
         return Err("bad id".into());
     }
+    // Ghost mode: nobody sees you typing.
+    if state.privacy.lock().unwrap().ghost_typing(&channel_id) {
+        return Ok(());
+    }
     rest_of(&state)?.post(&format!("/channels/{channel_id}/typing"), json!({})).await.map(|_| ()).map_err(|e| e.to_string())
 }
 
@@ -2397,7 +2417,13 @@ async fn upload_attachment(state: State<'_, App>, request: tauri::ipc::Request<'
     let channel_id = header("lc-channel").filter(|c| is_id(c)).ok_or("bad channel")?;
     let filename = header("lc-name").and_then(|n| media::requested_url(&n)).and_then(|n| media::clean_name(&n)).ok_or("bad file name")?;
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("no file".into()) };
-    let bytes = bytes.clone();
+    let (clean_uploads, generic) = {
+        let p = state.privacy.lock().unwrap();
+        (p.clean_uploads, p.generic_names)
+    };
+    // Photo metadata (GPS, camera, time) is taken out before anything leaves.
+    let bytes = if clean_uploads { clean::strip_metadata(bytes.clone())? } else { bytes.clone() };
+    let filename = if generic { clean::generic_name(&filename) } else { filename };
     let limit = {
         let guard = state.live.lock().unwrap();
         let live = guard.as_ref().ok_or("Not signed in.")?;
@@ -2419,6 +2445,7 @@ async fn upload_attachment(state: State<'_, App>, request: tauri::ipc::Request<'
     let uploaded = target["upload_filename"].as_str().filter(|n| !n.is_empty() && n.len() < 512).ok_or("Discord gave no upload name")?.to_owned();
 
     // Discord's bucket, not Discord's API: no token goes with it.
+    netlog::note(&upload_url.to_string());
     let response = state
         .http
         .put(upload_url)
@@ -2736,7 +2763,10 @@ async fn ack(app: AppHandle, state: State<'_, App>, channel_id: String, message_
     if already == Some(true) {
         return Ok(());
     }
-    rest_of(&state)?.post(&format!("/channels/{channel_id}/messages/{message_id}/ack"), json!({ "token": null })).await.map_err(|e| e.to_string())?;
+    // Ghost mode: read here, but Discord isn't told (other devices keep it unread).
+    if !state.privacy.lock().unwrap().ghost_read(&channel_id) {
+        rest_of(&state)?.post(&format!("/channels/{channel_id}/messages/{message_id}/ack"), json!({ "token": null })).await.map_err(|e| e.to_string())?;
+    }
     let read = json!({ "last": message_id, "mentions": 0 });
     if let Some(live) = state.live.lock().unwrap().as_mut() {
         live.reads.insert(channel_id.clone(), read.clone());
@@ -3012,7 +3042,7 @@ fn store(app: &AppHandle, state: &App) -> Result<settings::Store, String> {
 // whether it started in safe mode (the default theme, whatever the settings say).
 #[tauri::command]
 fn settings_get(app: AppHandle, state: State<App>) -> Result<Value, String> {
-    Ok(json!({ "settings": store(&app, &state)?.settings(), "safeMode": state.safe_mode }))
+    Ok(json!({ "settings": store(&app, &state)?.settings(), "safeMode": state.safe_mode, "debug": cfg!(debug_assertions) }))
 }
 
 #[tauri::command]
@@ -3031,7 +3061,9 @@ fn settings_save(app: AppHandle, state: State<App>, settings: Value) -> Result<V
 }
 
 fn apply_desktop(app: &AppHandle, state: &App, settings: &Value) {
-    apply_shortcuts(app, &settings["voice"]);
+    apply_shortcuts(app, settings);
+    *state.privacy.lock().unwrap() = privacy::Privacy::from(&settings["privacy"]);
+    refresh_shield(app, state);
     state.close_to_tray.store(settings["closeToTray"] != false, Ordering::Relaxed);
     *state.notify.lock().unwrap() = settings["notify"].as_str().unwrap_or("name").to_owned();
     // Voice & Video: kept for the next call, and applied to the one going on.
@@ -3045,12 +3077,20 @@ fn apply_desktop(app: &AppHandle, state: &App, settings: &Value) {
     *state.voice.lock().unwrap() = voice;
 }
 
-// Global mute and deafen keys (Voice & Video): off unless set, and they work while LockCord is in
-// the background too. Re-registered whenever the settings change.
-fn apply_shortcuts(app: &AppHandle, voice: &Value) {
+// Global mute and deafen keys (Voice & Video) and the panic key (Privacy): off unless set, and
+// they work while LockCord is in the background too. Re-registered whenever the settings change.
+fn apply_shortcuts(app: &AppHandle, settings: &Value) {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let shortcuts = app.global_shortcut();
     let _ = shortcuts.unregister_all();
+    if let Some(keys) = settings["privacy"]["panicKey"].as_str().filter(|k| !k.is_empty()) {
+        let _ = shortcuts.on_shortcut(keys, move |app, _, event| {
+            if event.state == ShortcutState::Pressed {
+                panic(app);
+            }
+        });
+    }
+    let voice = &settings["voice"];
     for (key, deafen) in [("muteKey", false), ("deafenKey", true)] {
         let Some(keys) = voice[key].as_str().filter(|k| !k.is_empty()) else { continue };
         let _ = shortcuts.on_shortcut(keys, move |app, _, event| {
@@ -3085,8 +3125,95 @@ fn toggle_call_control(app: &AppHandle, deafen: bool) {
 
 // The channel on screen (notifications skip it while the window has focus).
 #[tauri::command]
-fn viewing(state: State<App>, channel_id: Option<String>) {
+fn viewing(app: AppHandle, state: State<App>, channel_id: Option<String>) {
     *state.viewing.lock().unwrap() = channel_id.filter(|c| is_id(c));
+    refresh_shield(&app, &state);
+}
+
+// --- Privacy (privacy.rs, lock.rs) --------------------------------------------------------------------
+
+// The window says whether a live secret chat is on screen (it runs there); Rust knows the rest.
+#[tauri::command]
+fn shield_hint(app: AppHandle, state: State<App>, secret: bool) {
+    state.secret_on_screen.store(secret, Ordering::SeqCst);
+    refresh_shield(&app, &state);
+}
+
+// The capture shield up or down, as the setting and the chat on screen say. Rust decides whether
+// the chat is an encrypted DM; a secret chat it learns from the window.
+fn refresh_shield(app: &AppHandle, state: &App) {
+    let encrypted = {
+        let viewing = state.viewing.lock().unwrap().clone();
+        let guard = state.live.lock().unwrap();
+        viewing.zip(guard.as_ref()).is_some_and(|(c, live)| live.encrypted_peer(&c).is_some())
+    };
+    let sensitive = encrypted || state.secret_on_screen.load(Ordering::SeqCst);
+    let on = state.privacy.lock().unwrap().shield_on(sensitive);
+    let mut up = state.shield_up.lock().unwrap();
+    if *up == Some(on) {
+        return;
+    }
+    if let Some(w) = app.get_webview_window(MAIN) {
+        match privacy::set_capture_shield(&w, on) {
+            Ok(()) => *up = Some(on),
+            Err(e) => eprintln!("[shield] {e}"),
+        }
+    }
+}
+
+// Copying text: from a secret chat or an encrypted DM it's kept out of clipboard history and the
+// cloud clipboard, and cleared after a while unless something else was copied since.
+#[tauri::command]
+async fn copy_text(state: State<'_, App>, text: String, sensitive: bool) -> Result<(), String> {
+    if text.len() > 64 * 1024 {
+        return Err("Too long to copy.".into());
+    }
+    let careful = sensitive && state.privacy.lock().unwrap().clipboard;
+    let sequence = tauri::async_runtime::spawn_blocking(move || privacy::copy_text(&text, careful)).await.map_err(|e| e.to_string())??;
+    if careful {
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(privacy::CLIPBOARD_CLEAR_SECS)).await;
+            let _ = tauri::async_runtime::spawn_blocking(move || privacy::clear_clipboard_if(sequence)).await;
+        });
+    }
+    Ok(())
+}
+
+// What LockCord sent where this session (netlog.rs): hosts and counts, nothing more.
+#[tauri::command]
+fn net_log() -> Value {
+    netlog::view()
+}
+
+// Debug builds only: drops Discord's live connection as a lost network would; it should resume.
+#[tauri::command]
+fn debug_drop_gateway(state: State<App>) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("Only in debug builds.".into());
+    }
+    let guard = state.live.lock().unwrap();
+    let live = guard.as_ref().ok_or("Not signed in.")?;
+    live.outbound.try_send(json!({ "lc_debug_drop": true })).map_err(|e| e.to_string())
+}
+
+// The panic key: LockCord hides in the tray at once, and the microphone goes quiet in a call.
+fn panic(app: &AppHandle) {
+    let state = app.state::<App>();
+    if let Some(w) = app.get_webview_window(MAIN) {
+        let _ = w.hide();
+    }
+    let settings = voice_settings(&state);
+    let mut guard = state.live.lock().unwrap();
+    if let Some(live) = guard.as_mut() {
+        if let Some(a) = live.calls.active.as_mut().filter(|a| !a.muted) {
+            a.muted = true;
+            if let Some(m) = &a.media {
+                m.set_controls(effective_mute(a, &settings), a.deafened);
+            }
+            send_voice_state(live);
+            call_changed(app, live);
+        }
+    }
 }
 
 // --- Saving files (desktop.rs) ----------------------------------------------------------------------
@@ -3234,32 +3361,42 @@ fn main() {
             .build())
         .manage(App { profile: profile.clone(), safe_mode: std::env::args().any(|a| a == "--safe-mode"), http, live: Mutex::new(None), media: Mutex::new(media::Cache::default()), nonces: AtomicU64::new(0), captcha: Arc::new(captcha::Showing::default()),
             media_http: media::client(), viewing: Mutex::new(None), close_to_tray: AtomicBool::new(true), notify: Mutex::new("name".into()),
-            voice: Mutex::new(call::VoiceSettings::from(&Value::Null)), frames: Arc::new(call::Frames::default()), mic_test: Mutex::new(None) })
+            voice: Mutex::new(call::VoiceSettings::from(&Value::Null)), frames: Arc::new(call::Frames::default()), mic_test: Mutex::new(None),
+            privacy: Mutex::new(privacy::Privacy::default()), secret_on_screen: AtomicBool::new(false), shield_up: Mutex::new(None) })
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites, shield_hint, copy_text, net_log, debug_drop_gateway]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);
             }
             let title = if profile == "default" { "LockCord".to_owned() } else { format!("LockCord ({profile})") };
             let settings = store(app.handle(), &app.state::<App>()).map(|s| s.settings()).unwrap_or(Value::Null);
+            // The app lock is gone (1.6.0): an older version's PIN hash isn't left in the vault.
+            vault::delete(&format!("app-lock:{profile}"));
             apply_desktop(app.handle(), &app.state::<App>(), &settings);
             // Started with Windows and set to start hidden: only the tray icon shows.
             let hidden = std::env::args().any(|a| a == "--autostart") && settings["startHidden"] == true;
             // LockCord's own UI keeps nothing in the browser: its state is in Rust.
-            WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+            let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
                 .title(&title)
                 .inner_size(1240.0, 800.0)
                 .min_inner_size(900.0, 560.0)
-                // LockCord draws its own title bar (titlebar.js), so skins can dress it.
-                .decorations(false)
                 .incognito(true)
                 .data_directory(webview_dir(app.handle(), &profile))
                 .visible(!hidden)
                 // Dropped files reach the page as the browser's File objects, without their paths.
-                .disable_drag_drop_handler()
-                .build()?;
+                .disable_drag_drop_handler();
+            // LockCord draws its own title bar (titlebar.js), so themes can dress it; on macOS the
+            // system's traffic-light buttons sit in it (the page leaves room for them).
+            #[cfg(not(target_os = "macos"))]
+            let window = window.decorations(false);
+            #[cfg(target_os = "macos")]
+            let window = window
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .traffic_light_position(tauri::LogicalPosition::new(14.0, 13.0));
+            window.build()?;
             // Closing hides to the tray when that's on; Quit is in the tray's menu.
             let closing = app.handle().clone();
             if let Some(window) = app.get_webview_window(MAIN) {
@@ -3290,8 +3427,15 @@ fn main() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("LockCord failed to start");
+        .build(tauri::generate_context!())
+        .expect("LockCord failed to start")
+        .run(|_app, _event| {
+            // macOS: clicking the Dock icon brings back a window that was closed to the tray.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                desktop::show(_app, MAIN);
+            }
+        });
 }
 
 #[cfg(test)]

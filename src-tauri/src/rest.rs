@@ -115,6 +115,7 @@ impl Rest {
             if let Some(body) = &body {
                 request = request.json(body);
             }
+            crate::netlog::note(API);
             let response = request.send().await.map_err(|e| RestError::Network(e.without_url().to_string()))?;
             let status = response.status();
             let headers = response.headers().clone();

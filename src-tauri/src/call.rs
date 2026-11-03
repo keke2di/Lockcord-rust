@@ -418,6 +418,7 @@ pub fn start_media(
     ended: impl FnOnce(Result<(), &'static str>) + Send + 'static,
 ) -> Result<Media, String> {
     let (Some(session), Some((token, endpoint))) = (&a.session, &a.server) else { return Err("not ready".into()) };
+    crate::netlog::note(&format!("wss://{}", endpoint.trim_start_matches("wss://")));
     let credentials = VoiceConnection {
         channel: id_of(&a.channel).ok_or("bad channel")?,
         guild: a.guild.as_deref().and_then(id_of),
@@ -576,6 +577,7 @@ pub fn share_settings(kind: &str, id: &str, height: u32, fps: u32, audio: bool) 
 /// The voice connection of a stream: its own rtc server, with the call's session.
 pub fn stream_credentials(s: &Stream, a: &Active, me: &str) -> Result<VoiceConnection, String> {
     let (Some((server, channel)), Some((token, endpoint)), Some(session)) = (s.rtc, &s.server, &a.session) else { return Err("not ready".into()) };
+    crate::netlog::note(&format!("wss://{}", endpoint.trim_start_matches("wss://")));
     Ok(VoiceConnection {
         channel,
         guild: Some(server),
