@@ -49,10 +49,11 @@ talks to Discord's API and gateway itself.
   - **What LockCord sends**: every host LockCord contacted this session, with a request count.
 - **Themes**: seven complete looks (LockCord, Midnight Pro, Blossom, Windows XP, Aero Glass,
   Sakura Retro, Minimal), each changing shapes, frames, buttons, icons and animations, with its own
-  light and dark colour schemes. Text size, compact messages and animations can be set on top.
-  Ctrl+Shift+0 switches to the default theme for a moment.
+  light and dark colour schemes. Sakura Retro is a garden: blossoms, falling petals, butterflies,
+  hearts and sparkles. Text size, compact messages and animations can be set on top.
+  Ctrl+Shift+0 (Cmd+Shift+0 on a Mac) switches to the default theme for a moment.
 - **On the desktop**: notifications (by default who it's from, not what they said), a tray icon,
-  closing to the tray, starting with Windows, and "Save media" for a message's files (programs
+  closing to the tray, starting with the system, and "Save media" for a message's files (programs
   get ".download" added, and every file is marked as from the internet).
 - **Captchas**: when Discord asks for one (a first message to someone new, a friend request), it
   shows in a small window of its own and the message goes through once it's done.
@@ -92,6 +93,13 @@ Windows user only (no administrator rights), with a Start menu entry and an unin
 signed, so Windows SmartScreen may warn: choose **More info**, then **Run anyway**. The portable
 `lockcord.exe` works too, without installing.
 
+On a Mac (macOS 13 or later, Apple Silicon or Intel), download `LockCord_<version>_universal.dmg`,
+open it and drag LockCord into Applications. It isn't signed by Apple, so the first time macOS
+refuses to open it: go to System Settings → Privacy & Security and choose **Open Anyway**. Calls
+ask for the microphone and camera when used; screen sharing needs macOS 14 and the Screen
+Recording permission. The session and keys are kept in your Keychain. Updates aren't installed in
+place on a Mac: LockCord opens the release page instead.
+
 ## Building it yourself
 
 You need Windows 10 or 11 (WebView2 comes with them), Rust, and CMake (for the Opus codec used in
@@ -112,7 +120,8 @@ calls: <https://cmake.org/download/>).
 To run straight from the sources instead: `cd src-tauri` and `cargo run --release`.
 
 To build the installer too, use Tauri's CLI in `src-tauri`: `npx @tauri-apps/cli@2 build`. The
-installer is then under `target\release\bundle\nsis`.
+installer is then under `target\release\bundle\nsis`. The Mac app is built by
+`.github/workflows/macos.yml` (Xcode 26, `tauri build --target universal-apple-darwin`).
 
 ## Running
 
