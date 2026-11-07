@@ -77,11 +77,11 @@ pub struct Cache {
 }
 
 impl Cache {
-    fn get(&self, url: &str) -> Option<(&'static str, Arc<Vec<u8>>)> {
+    pub(crate) fn get(&self, url: &str) -> Option<(&'static str, Arc<Vec<u8>>)> {
         self.items.get(url).cloned()
     }
 
-    fn put(&mut self, url: String, kind: &'static str, bytes: Arc<Vec<u8>>) {
+    pub(crate) fn put(&mut self, url: String, kind: &'static str, bytes: Arc<Vec<u8>>) {
         if self.items.contains_key(&url) || bytes.len() > CACHE_BYTES / 4 {
             return;
         }

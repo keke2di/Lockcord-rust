@@ -82,6 +82,7 @@ fn clean_privacy(raw: &Value) -> Value {
         "noEmbeds": flag("noEmbeds", false),
         "panicKey": shortcut(&raw["panicKey"]),
         "clipboard": flag("clipboard", true),
+        "e2eRenew": raw["e2eRenew"].as_str().filter(|r| ["daily", "weekly", "monthly"].contains(r)).unwrap_or("weekly"),
     })
 }
 
@@ -111,6 +112,7 @@ fn clean_voice(raw: &Value) -> Value {
 
 // --- On disk ----------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct Store {
     root: PathBuf,
 }
@@ -127,6 +129,23 @@ impl Store {
 
     pub fn write_json(&self, name: &str, value: &Value) -> Result<(), String> {
         write(&self.root.join(name), value.to_string().as_bytes())
+    }
+
+    /// A file of the profile's own, raw (the sealed encrypted-DM files: e2e_store.rs, history.rs).
+    pub fn read_bytes(&self, name: &str) -> Option<Vec<u8>> {
+        fs::read(self.root.join(name)).ok()
+    }
+
+    pub fn write_bytes(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        write(&self.root.join(name), bytes)
+    }
+
+    pub fn remove(&self, name: &str) {
+        let _ = fs::remove_file(self.root.join(name));
+    }
+
+    pub fn exists(&self, name: &str) -> bool {
+        self.root.join(name).is_file()
     }
 
     pub fn settings(&self) -> Value {

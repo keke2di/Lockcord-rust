@@ -86,6 +86,6 @@
     "allow-update-install",
     "allow-member-search", "allow-gif-trending", "allow-gif-search", "allow-gif-favorites",
     "allow-shield-hint", "allow-copy-text",
-    "allow-net-log", "allow-debug-drop-gateway"
+    "allow-net-log", "allow-debug-drop-gateway", "allow-debug-e2e-age", "allow-e2e-keep-copy", "allow-e2e-erase-copy", "allow-e2e-file-info"
   ]
 }

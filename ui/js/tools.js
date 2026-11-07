@@ -55,7 +55,9 @@ export function renderApp(body, ctx, redraw) {
   if (ctx.debug) {
     body.appendChild(section('Developer',
       block('Drop the connection', 'Cuts Discord’s live connection as a lost network would. It should come back and resume within a few seconds, with nothing missed.',
-        h('button', { type: 'button', class: 'button secondary', onclick: () => ctx.debugDrop().then(() => ctx.toast('Dropped. Watch it reconnect.'), (e) => ctx.toast(String(e))) }, 'Drop now'))));
+        h('button', { type: 'button', class: 'button secondary', onclick: () => ctx.debugDrop().then(() => ctx.toast('Dropped. Watch it reconnect.'), (e) => ctx.toast(String(e))) }, 'Drop now')),
+      block('Age encryption keys', 'Moves the encrypted-DM clock forward, for this session: 7 days makes the next message renew the keys (weekly), 8 more deletes the keys that renewal replaced.',
+        h('div', { class: 'file-pick' }, ...[7, 8].map((days) => h('button', { type: 'button', class: 'button secondary', onclick: () => ctx.debugE2eAge(days).then(() => ctx.toast('Encryption clock moved ' + days + ' days on.'), (e) => ctx.toast(String(e))) }, '+' + days + ' days'))))));
   }
   body.appendChild(section('Saving files',
     block('Folder', '“Save media” in a message’s menu puts its files here. Programs and scripts get “.download” added, and every file is marked as from the internet.',
@@ -111,6 +113,10 @@ export function renderPrivacy(body, ctx, redraw) {
     toggle('Generic file names', 'Uploads go as “image.jpg”, “video.mp4” or “file.pdf” instead of their own names.', !!p.genericNames, (genericNames) => set({ genericNames })),
     toggle('Clean links', 'Takes tracking parameters out of links you send (utm_…, fbclid, gclid, YouTube’s and Spotify’s si, …). Code stays as typed.', p.cleanLinks !== false, (cleanLinks) => set({ cleanLinks })),
     toggle('Send links without previews', 'Your messages’ links show no embed for others.', !!p.noEmbeds, (noEmbeds) => set({ noEmbeds }))));
+
+  body.appendChild(section('Encrypted DMs',
+    block('New keys', 'How often each encrypted DM gets new keys (posted in the DM when someone next writes, or after 500 messages). The old keys are deleted a week after they’re replaced; messages sent with them can then only be read from a local copy, if you keep one for that DM.',
+      dropdown([{ value: 'daily', label: 'Every day' }, { value: 'weekly', label: 'Every week' }, { value: 'monthly', label: 'Every month' }], p.e2eRenew || 'weekly', (e2eRenew) => set({ e2eRenew }), 'New keys'))));
 
   body.appendChild(section('Panic key',
     h('div', { class: 'control-description' }, 'Hides LockCord in the tray at once, from anywhere, and mutes your microphone in a call.'),
@@ -242,7 +248,8 @@ export function renderE2e(body, ctx, redraw) {
   body.appendChild(h('div', { class: 'notice' },
     h('div', null, 'An encrypted DM is your normal DM with another LockCord user, end-to-end encrypted: Discord stores only ciphertext, and only your two LockCords can read it. The messages stay in the DM, readable later; for a live, off-the-record chat use a secret chat instead.'),
     h('div', null, 'To turn it on, press “Encrypt” in a DM’s header. LockCord posts its public key there once; their LockCord asks them, and answers once they accept. Your secret key stays on this computer, ' + (IS_MAC ? 'in your macOS Keychain.' : 'in Windows Credential Manager, encrypted for your Windows account (it never roams to other machines).')),
-    h('div', null, 'Compare the 60-digit safety code with them once, on a call. If their key ever changes, LockCord stops sending to them until you check it. Text only for now: files go unencrypted, and only on purpose. There is no forward secrecy: anyone who later got your secret key could read your past encrypted DMs, so “Turn off” when you’re done with someone.')));
+    h('div', null, 'Compare the 60-digit safety code with them once, on a call. If their key ever changes, LockCord stops sending to them until you check it. Files go encrypted too.'),
+    h('div', null, 'The keys renew by themselves (Privacy → Encrypted DMs), and the old ones are deleted a week later: after that, not even someone who gets this computer’s keys can read older messages. For each DM you choose whether LockCord keeps its own encrypted copy here, so the history stays readable on this computer. With someone on an older LockCord, the previous encryption is used until they update.')));
   if (view.problem) body.appendChild(h('div', { class: 'notice warn' }, view.problem));
   const contacts = (view.contacts || []).filter((c) => c.status !== 'off');
   if (!contacts.length) {
@@ -253,8 +260,15 @@ export function renderE2e(body, ctx, redraw) {
     h('span', { class: 'guard-shield' + (c.status === 'on' ? '' : ' warn') }, icon(ICONS.lock, 20)),
     h('div', { class: 'theme-row-text' }, h('div', { class: 'theme-row-name' }, ctx.peerName(c.peer)),
       h('div', { class: 'control-description' }, E2E_STATUS[c.status] + (c.safety ? ' · safety code ' + shortCode(c.safety) : '') + (c.verified ? ' · compared ✓' : '')
-        + (c.since ? ' · since ' + new Date(c.since).toLocaleDateString() : ''))),
+        + (c.since ? ' · since ' + new Date(c.since).toLocaleDateString() : '') + (c.older ? ' · their LockCord is older' : '')
+        + (c.keepCopy === true ? ' · local copy kept' : c.keepCopy === false ? ' · no local copy' : ''))),
     c.status === 'on' ? h('button', { type: 'button', class: 'button secondary', onclick: () => ctx.e2eVerify(c.peer, !c.verified).then(redraw).catch((e) => ctx.toast(String(e))) }, c.verified ? 'Unmark compared' : 'Mark compared') : null,
+    c.status === 'on' ? h('button', { type: 'button', class: 'button secondary', onclick: (e) => {
+      const b = e.currentTarget;
+      // Turning the copy off erases it: asked twice.
+      if (c.keepCopy && !b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again: the copy is erased'; return; }
+      ctx.e2eKeepCopy(c.peer, !c.keepCopy).then(redraw).catch((err) => ctx.toast(String(err)));
+    } }, c.keepCopy ? 'Stop keeping a copy' : 'Keep a local copy') : null,
     h('button', { type: 'button', class: 'button danger-outline', onclick: (e) => {
       const b = e.currentTarget;
       if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again: old messages become unreadable'; return; }

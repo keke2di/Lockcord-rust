@@ -360,6 +360,8 @@ function buildPicture(src, width, height, { full, name, video, spoiler }, ctx) {
 
 function attachmentsOf(m, ctx, key) {
   return (m.attachments || []).map((a, i) => {
+    // An encrypted DM's file (efile.rs): decrypted in Rust, which says what it is once asked.
+    if (a.lc_enc) return keep(key + ':x' + i + '|' + a.lc_enc, () => encryptedFile(a, ctx));
     const type = (a.content_type || '').split(';')[0];
     if (IMAGE_TYPES.test(type) && a.width && a.height) {
       const gif = type === 'image/gif';
@@ -375,6 +377,28 @@ function attachmentsOf(m, ctx, key) {
         h('a', { class: 'file-name link', href: '#', title: 'Open in your browser', onclick: (e) => { e.preventDefault(); ctx.openLink(a.url); } }, a.filename || 'file'),
         h('div', { class: 'file-size' }, formatBytes(a.size || 0))));
   });
+}
+
+// An encrypted file: a card while Rust fetches and decrypts it, then the picture or video if its
+// bytes are one, otherwise the card with its real name (Save media saves it decrypted).
+function encryptedFile(a, ctx) {
+  const name = h('span', { class: 'file-name' }, 'Encrypted file');
+  const size = h('div', { class: 'file-size' }, 'Decrypting…');
+  const card = h('div', { class: 'file-card e2e-file' }, h('div', { class: 'file-icon' }, icon(ICONS.lock, 28)), h('div', { class: 'file-meta' }, name, size));
+  const box = h('div', { class: 'e2e-file-box' }, card);
+  ctx.e2eFile(a.lc_enc).then((f) => {
+    name.textContent = f.name || 'file';
+    size.textContent = formatBytes(f.size || 0) + ' · encrypted';
+    const src = ctx.media(a.url);
+    if (f.type && f.type.startsWith('image/')) {
+      box.replaceChildren(h('img', { class: 'e2e-image', src, alt: f.name || '', loading: 'lazy', draggable: false, title: f.name || '', onclick: () => ctx.openViewer({ url: src, name: f.name }) }));
+    } else if (f.type && f.type.startsWith('video/')) {
+      const video = h('video', { class: 'e2e-video', src, controls: true, preload: 'metadata', playsInline: true });
+      video.addEventListener('click', (e) => e.stopPropagation());
+      box.replaceChildren(video);
+    }
+  }).catch((e) => { size.textContent = String(e); card.classList.add('warn'); });
+  return box;
 }
 
 // Discord's sticker formats: 1 PNG, 2 APNG, 3 Lottie (not drawn here: its name instead), 4 GIF.
@@ -465,6 +489,8 @@ function e2eNote(body, m, d) {
     body.appendChild(h('div', { class: 'e2e-note warn' }, 'This encrypted message couldn’t be decrypted: it was changed, or isn’t from who it says.'));
   } else if (m.lc_e2e_untrusted) {
     body.appendChild(h('div', { class: 'e2e-note warn' }, 'Encrypted with a key you haven’t accepted (their key changed). See the header.'));
+  } else if (m.lc_e2e_expired) {
+    body.appendChild(h('div', { class: 'e2e-note' }, 'Sent before this device’s keys were renewed, and not kept in a local copy: it can’t be read here any more.'));
   } else if (m.lc_e2e_locked) {
     body.appendChild(h('div', { class: 'e2e-note' }, 'Encrypted message. You don’t have the key for it.'));
   } else if (d.e2eHere && m.content) {

@@ -24,9 +24,11 @@ talks to Discord's API and gateway itself.
   call. Stage channels aren't supported.
 - **Encrypted DMs** with other LockCord users: press **Encrypt** in a DM's header. Their LockCord
   asks them first; once they accept, your normal DM is end-to-end encrypted: Discord stores only
-  ciphertext, only your two LockCords can read it, and the messages stay readable later. Compare
-  the 60-digit safety code once; if their key ever changes, LockCord stops sending until you check
-  it.
+  ciphertext, only your two LockCords can read it, and the messages stay readable later. Files
+  go encrypted too. Compare the 60-digit safety code once; if their key ever changes, LockCord
+  stops sending until you check it. The keys renew by themselves (weekly by default) and the old
+  ones are deleted a week later; for each DM you choose whether LockCord keeps its own encrypted
+  copy on your computer, so the history stays readable there.
 - **Secret chats**: the lock in a DM's header. Live, peer to peer and end-to-end encrypted
   (ecdh.chat's protocol); they open only after both of you compare a 6-digit code, and nothing
   but the invite goes through Discord.
@@ -78,13 +80,21 @@ online: set your status to Invisible for that.
 
 ### What encrypted DMs don't protect
 
-- **No forward secrecy.** The message keys come from your two LockCords' identity keys, so anyone
-  who later got hold of your identity key (and Discord's copy of the ciphertext) could read that
-  DM's past messages. "Turn off" in the DM forgets its keys.
-- **Your own computer.** Programs running as your Windows user can read the keys LockCord keeps.
+- **Forward secrecy is per key period, not per message.** Each renewal brings fresh one-time keys,
+  and their secrets are deleted a week after they're replaced: from then on, nobody who gets your
+  keys (and Discord's copy of the ciphertext) can read that period's messages. Messages from the
+  current and the previous week can still be read with the keys on your computer.
+- **The local copy, if you keep one.** It is encrypted with a key in Windows Credential Manager
+  (or the macOS Keychain), so someone with your computer *and* your Windows (or macOS) account can
+  read it. Choose "Don't keep" for a DM where that matters; erasing a copy also replaces its key.
+- **With someone on an older LockCord**, the previous encryption is used until they update: no
+  forward secrecy and no encrypted files.
+- **Your own computer.** Programs running as your user account can read the keys LockCord keeps.
+  Deleted files may linger on an SSD; LockCord replaces the keys of what it deletes so that
+  leftovers can't be opened, which is as far as software can go.
 - **What Discord still sees:** that you two talk, when, roughly how long each message is,
-  reactions, typing, edits and deletes, and the key messages themselves (public keys only).
-  Files go unencrypted, and only on purpose.
+  roughly how big each file is, reactions, typing, edits and deletes, and the key messages
+  themselves (public keys only).
 
 ## Installing
 

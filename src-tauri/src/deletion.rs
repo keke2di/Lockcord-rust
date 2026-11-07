@@ -87,7 +87,7 @@ impl Filters {
         if !self.keywords.is_empty() {
             // An encrypted message that couldn't be opened: its words are unknown, so a keyword
             // filter never deletes it, whichever way it points.
-            let unreadable = ["lc_e2e_locked", "lc_e2e_failed", "lc_e2e_untrusted"].iter().any(|k| m[*k] == true) || m["content"].as_str().is_some_and(crate::e2e::is_lc1);
+            let unreadable = ["lc_e2e_locked", "lc_e2e_failed", "lc_e2e_untrusted"].iter().any(|k| m[*k] == true) || m["content"].as_str().is_some_and(crate::e2e::is_sealed);
             if unreadable {
                 return false;
             }

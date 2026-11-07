@@ -610,11 +610,15 @@ function encryptionControl(dm) {
   const status = e ? e.status : 'off';
   if (status === 'off') {
     return h('button', { type: 'button', class: 'header-text-button', title: 'End-to-end encrypt this DM (they need LockCord)', onclick: () => {
-      api.e2eEnable(dm.id).then(() => showToast('Your key is posted. Encryption starts when ' + displayName(peerOf(dm)) + '’s LockCord answers.')).catch((err) => showToast('Couldn’t turn it on: ' + err));
+      api.e2eEnable(dm.id).then(() => {
+        showToast('Your key is posted. Encryption starts when ' + displayName(peerOf(dm)) + '’s LockCord answers.');
+        askKeepCopy(peerOf(dm).id, displayName(peerOf(dm)));
+      }).catch((err) => showToast('Couldn’t turn it on: ' + err));
     } }, icon(ICONS.lock, 16), 'Encrypt');
   }
   const open = (ev) => { ev.stopPropagation(); showEncryption(dm, ev.currentTarget); };
-  if (status === 'on') return h('button', { type: 'button', class: 'header-e2e', title: 'Encrypted DM', onclick: open }, encryptedPill(e.safety));
+  if (status === 'on') return h('button', { type: 'button', class: 'header-e2e', title: 'Encrypted DM', onclick: open }, encryptedPill(e.safety),
+    e.keepCopy === null || e.keepCopy === undefined ? h('span', { class: 'e2e-ask' }, 'Local copy?') : null);
   const label = status === 'waiting' ? 'Encryption: waiting for their LockCord' : status === 'offered' ? 'Encryption offered'
     : status === 'changed' ? '⚠ Their key changed' : '⚠ Encryption keys missing';
   return h('button', { type: 'button', class: 'header-text-button' + (status === 'waiting' || status === 'offered' ? '' : ' warn'), onclick: open }, icon(ICONS.lock, 16), label);
@@ -626,8 +630,38 @@ function answerOffer(dm, accept) {
   if (!e) return;
   const them = displayName(peerOf(dm));
   (accept ? api.e2eAcceptOffer(e.peer) : api.e2eIgnoreOffer(e.peer))
-    .then(() => showToast(accept ? 'Your key is posted: this DM is encrypted from now on.' : 'Ignored. Nothing was posted to ' + them + '.'))
+    .then(() => {
+      showToast(accept ? 'Your key is posted: this DM is encrypted from now on.' : 'Ignored. Nothing was posted to ' + them + '.');
+      if (accept) askKeepCopy(e.peer, them);
+    })
     .catch((err) => showToast(String(err)));
+}
+
+// Asked once per encrypted DM (history.rs): keep LockCord's own encrypted copy of what's opened
+// here, so old messages stay readable after the keys are renewed? Closing it leaves it unanswered
+// (the header keeps asking).
+function askKeepCopy(peerId, them) {
+  const answer = (keep) => {
+    closeLayer();
+    api.e2eKeepCopy(peerId, keep)
+      .then(() => showToast(keep ? 'A local copy is kept on this device.' : 'No local copy: old messages become unreadable here once their keys are renewed.'))
+      .catch((err) => showToast(String(err)));
+  };
+  closeLayer();
+  layer.className = 'layer modal-layer';
+  layer.appendChild(h('div', { class: 'modal-backdrop', onclick: closeLayer }));
+  layer.appendChild(h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', onclick: (ev) => ev.stopPropagation() },
+    h('h2', { class: 'modal-title' }, 'Keep a local copy?'),
+    h('div', { class: 'modal-text' }, 'Encrypted DMs get new keys regularly, and the old keys are deleted a week later. After that, your messages with ' + them
+      + ' can only be read on this computer if LockCord keeps its own encrypted copy here. Without one, old messages become unreadable for good: more private if this computer is ever taken, but the history is gone.'),
+    h('div', { class: 'modal-buttons' },
+      h('button', { type: 'button', class: 'button link', onclick: () => answer(false) }, 'Don’t keep'),
+      h('button', { type: 'button', class: 'button brand', onclick: () => answer(true) }, 'Keep a copy'))));
+}
+
+// How often keys renew, in words (Settings, Privacy).
+function renewWords() {
+  return { daily: 'every day', monthly: 'every month' }[(prefs.settings.privacy || {}).e2eRenew] || 'every week';
 }
 
 // The whole safety code, with a way to copy it (to read it out on a call, or paste it elsewhere).
@@ -645,7 +679,18 @@ function showEncryption(dm, anchor) {
   const done = (p, ok) => p.then(() => { closeLayer(); if (ok) showToast(ok); }).catch((err) => showToast(String(err)));
   const rows = [h('div', { class: 'members-title' }, 'Encryption with ' + them)];
   if (e.status === 'on') {
+    const copy = e.keepCopy === null || e.keepCopy === undefined
+      ? h('div', { class: 'settings-row' }, h('span', { class: 'control-description' }, 'Keep a local copy of this DM on this computer?'),
+        h('button', { type: 'button', class: 'button brand small', onclick: () => done(api.e2eKeepCopy(e.peer, true), 'A local copy is kept on this device.') }, 'Keep'),
+        h('button', { type: 'button', class: 'button secondary small', onclick: () => done(api.e2eKeepCopy(e.peer, false)) }, 'Don’t keep'))
+      : h('div', null,
+        toggle('Keep a local copy', 'Encrypted, on this computer only: old messages stay readable here after the keys are renewed. Turning it off erases it.', !!e.keepCopy, (v) => done(api.e2eKeepCopy(e.peer, v))),
+        e.keepCopy ? h('button', { type: 'button', class: 'button link small', onclick: () => done(api.e2eEraseCopy(e.peer), 'Local copy erased.') }, 'Erase the copy now') : null);
     rows.push(h('div', { class: 'control-description' }, 'Everything you send here is end-to-end encrypted: Discord stores only ciphertext.'),
+      e.version === 2 ? h('div', { class: 'control-description' }, 'Keys renew ' + renewWords() + (e.epochSince ? ' (these since ' + new Date(e.epochSince).toLocaleDateString() + ')' : '')
+        + '. Old keys are deleted a week later, so nobody who gets this computer’s keys after that can read older messages. Files go encrypted too.') : null,
+      e.older ? h('div', { class: 'control-description warn' }, them + '’s LockCord is older: this DM keeps the previous encryption (no key renewal, no encrypted files) until they update.') : null,
+      copy,
       safetyBlock('Safety code', e.safety),
       h('div', { class: 'control-description' }, 'The same 60 digits on ' + them + '’s screen mean nobody is in between. Compare them once, on a call or in person.'),
       toggle('We compared it', null, !!e.verified, (v) => done(api.e2eVerify(e.peer, v))),
@@ -861,9 +906,11 @@ function drawComposer(dm) {
   gifButton.hidden = secretMode;
   gifButton.disabled = held || mute || state.uploading || blocked || loading || (e2eMode && !plain);
   gifButton.title = e2eMode && !plain ? 'GIFs can’t go encrypted' : 'Open GIF picker';
-  attach.disabled = held || mute || state.uploading || (!!dm.guild_id && !dm.can_attach) || (e2eMode && !plain);
+  // Files go encrypted only in a v2 epoch (an older LockCord can't open them).
+  const e2eFiles = e2eMode && !plain && e2e.status === 'on' && e2e.version === 2;
+  attach.disabled = held || mute || state.uploading || (!!dm.guild_id && !dm.can_attach) || (e2eMode && !plain && !e2eFiles);
   attach.title = secretMode ? 'Upload a file (secret)' : dm.guild_id && !dm.can_attach ? 'You can’t upload files here'
-    : e2eMode && !plain ? 'Files can’t go encrypted yet' : 'Upload a file';
+    : e2eFiles ? 'Upload a file (encrypted)' : e2eMode && !plain ? 'Their LockCord is older: files can’t go encrypted yet' : 'Upload a file';
   composer.classList.toggle('secret', secretMode);
   composer.classList.toggle('e2e', e2eMode && !plain);
   composer.classList.toggle('plain-next', plain);
@@ -1325,6 +1372,7 @@ function draw(toEnd) {
     openReactionPicker: (id, anchor) => openReactionPicker(id, anchor),
     openViewer: (r) => openViewer(r),
     media,
+    e2eFile: (key) => { const [id, i] = String(key).split(':'); return api.e2eFileInfo(id, Number(i)); },
     emojiUrl,
     secretMenu,
     select: selectionCtx(),
@@ -1561,8 +1609,10 @@ function editorFor(key, original, onSave, onEmpty) {
 // Files for the next message: the + button, dropped or pasted. A secret message's go straight to
 // the other side; a Discord message's are uploaded when it's sent.
 function canStage() {
-  // Files can't go encrypted yet: in an encrypted DM only when the next message is unencrypted on purpose.
-  const e2eLocked = state.composeMode === 'e2e' && state.plainNext !== state.current;
+  // Files go encrypted in an encrypted DM (efile.rs), except to an older LockCord: there only when
+  // the next message is unencrypted on purpose.
+  const e = state.composeMode === 'e2e' ? e2eOf(state.current) : null;
+  const e2eLocked = !!e && e.version !== 2 && state.plainNext !== state.current;
   return !!state.current && !textarea.disabled && !e2eLocked;
 }
 
@@ -2343,6 +2393,8 @@ function openSettings(start) {
     guardRemove: (id) => api.guardRemove(id).then(() => { guarded.delete(id); refresh(); }),
     e2eStatus: () => state.e2e,
     e2eForget: (peerId) => api.e2eForget(peerId),
+    e2eKeepCopy: (peerId, keep) => api.e2eKeepCopy(peerId, keep),
+    e2eEraseCopy: (peerId) => api.e2eEraseCopy(peerId),
     e2eVerify: (peerId, v) => api.e2eVerify(peerId, v),
     peerName: (peerId) => { const dm = state.dms.find((d) => peerOf(d) && peerOf(d).id === peerId); return dm ? displayName(peerOf(dm)) : 'Someone (' + peerId + ')'; },
     appSettings: () => prefs.settings,
@@ -2381,6 +2433,7 @@ function openSettings(start) {
     netLog: () => api.netLog(),
     debug: !!prefs.debug,
     debugDrop: () => api.debugDropGateway(),
+    debugE2eAge: (days) => api.debugE2eAge(days),
     toast: showToast,
     close: () => closeSettings(),
   });

@@ -83,6 +83,10 @@ export const api = {
   // The other side's offer: answered (posts this side's key) or left alone (posts nothing).
   e2eAcceptOffer: (peerId) => call('e2e_accept_offer', { peerId }),
   e2eIgnoreOffer: (peerId) => call('e2e_ignore_offer', { peerId }),
+  // The local copy of an encrypted DM (history.rs), asked per DM; files are decrypted in Rust.
+  e2eKeepCopy: (peerId, keep) => call('e2e_keep_copy', { peerId, keep }),
+  e2eEraseCopy: (peerId) => call('e2e_erase_copy', { peerId }),
+  e2eFileInfo: (messageId, index) => call('e2e_file_info', { messageId, index }),
   // Calls (call.rs): voice, camera and screen sharing; media stays in Rust.
   callJoin: (channelId) => call('call_join', { channelId }),
   callLeave: () => call('call_leave'),
@@ -122,4 +126,5 @@ export const api = {
   netLog: () => call('net_log'),
   // Debug builds only: drop the gateway as a lost network would, to watch it resume.
   debugDropGateway: () => call('debug_drop_gateway'),
+  debugE2eAge: (days) => call('debug_e2e_age', { days }),
 };

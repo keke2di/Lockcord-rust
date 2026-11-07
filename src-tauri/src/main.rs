@@ -13,11 +13,14 @@ mod clean;
 mod deletion;
 mod desktop;
 mod e2e;
+mod e2e_store;
+mod efile;
 mod fingerprint;
 mod gateway;
 mod gifs;
 mod guard;
 mod guilds;
+mod history;
 mod media;
 mod netlog;
 mod people;
@@ -97,6 +100,16 @@ struct E2eState {
     // Peers this side is posting an answer to right now (one at a time).
     answering: HashSet<String>,
     problem: Option<String>,
+    // Debug builds' "Age encryption keys": added to the clock for retiring and renewing.
+    skew: u64,
+    // The local copies of the DMs where the user chose to keep one (history.rs).
+    copies: history::Copies,
+    // Encrypted uploads waiting to be sent: their keys, by the name Discord holds them under.
+    sealed_uploads: HashMap<String, e2e::FileRef>,
+    // Opened messages' encrypted files, "<message id>:<index>" -> (key, Discord's URL), and what
+    // a decrypted one turned out to be (name, type shown inline if any, size). Keys stay here.
+    files: HashMap<String, (e2e::FileRef, String)>,
+    file_meta: HashMap<String, (String, Option<&'static str>, u64)>,
 }
 
 // A purge: what its scan found (channel, message), waiting to be confirmed, and its stop switch.
@@ -108,7 +121,7 @@ struct Purge {
 impl Live {
     /// The other person in a 1:1 DM.
     fn dm_peer(&self, channel: &str) -> Option<String> {
-        self.dms.iter().find(|d| d["id"] == channel && d["type"] == 1).and_then(|d| d["recipients"][0]["id"].as_str()).map(str::to_owned)
+        self.dms.iter().find(|d| d["id"] == channel && d["type"] == 1).and_then(|d| d["recipients"][0]["id"].as_str()).filter(|id| is_id(id)).map(str::to_owned)
     }
 
     /// Whether this channel is an encrypted DM: nothing may go out there in plain text unless asked.
@@ -124,7 +137,7 @@ impl Live {
     /// A LockCord key message in a 1:1 DM, yours or theirs: recorded, and shown as a line rather
     /// than its text. Returns (peer, what it did, whether this side should answer now).
     fn e2e_key(&mut self, profile: &str, m: &mut Value) -> Option<(String, e2e::Event, bool)> {
-        let (role, key, nonce) = m["content"].as_str().and_then(e2e::parse_key_message)?;
+        let (role, key, ephemeral, nonce) = m["content"].as_str().and_then(e2e::parse_key_message)?;
         let channel = m["channel_id"].as_str().unwrap_or("").to_owned();
         let author = m["author"]["id"].as_str().unwrap_or("").to_owned();
         let me = self.me_id();
@@ -143,8 +156,12 @@ impl Live {
         }
         let identity = self.e2e.identity.as_ref()?;
         let id = m["id"].as_str().unwrap_or("").to_owned();
-        let ann = e2e::Announcement { id: id.clone(), key, nonce, role, at: deletion::time_of(&id) };
+        let ann = e2e::Announcement { id: id.clone(), key, ephemeral, nonce, role, at: deletion::time_of(&id) };
         let event = self.e2e.book.record(identity, &me, &peer, ann, from_me);
+        if event == e2e::Event::Refused {
+            m["lc_key"] = json!("ignored");
+            return None;
+        }
         if event == e2e::Event::Changed {
             m["lc_key_changed"] = json!(true);
         }
@@ -165,7 +182,7 @@ impl Live {
         // A forward carries a copy that belongs to another channel: never readable, never raw.
         for snap in m["message_snapshots"].as_array_mut().into_iter().flatten() {
             let inner = &mut snap["message"];
-            if inner["content"].as_str().is_some_and(e2e::is_lc1) {
+            if inner["content"].as_str().is_some_and(e2e::is_sealed) {
                 inner["content"] = json!("");
                 inner["lc_e2e_locked"] = json!(true);
             }
@@ -174,7 +191,7 @@ impl Live {
     }
 
     fn e2e_open_one(&mut self, m: &mut Value) {
-        let Some(content) = m["content"].as_str().filter(|c| e2e::is_lc1(c)).map(str::to_owned) else { return };
+        let Some(content) = m["content"].as_str().filter(|c| e2e::is_sealed(c)).map(str::to_owned) else { return };
         let channel = m["channel_id"].as_str().unwrap_or("").to_owned();
         let sender = m["author"]["id"].as_str().unwrap_or("").to_owned();
         let id = m["id"].as_str().unwrap_or("").to_owned();
@@ -192,20 +209,93 @@ impl Live {
                 m["lc_e2e_replayed"] = json!(true);
             }
         }
+        // The DM's local copy, if the user chose to keep one (history.rs).
+        let keep = peer.as_ref().filter(|p| self.e2e.book.contacts.get(*p).is_some_and(|c| c.keep_copy == Some(true))).cloned();
         match opened {
-            Ok(e2e::Opened::Text(text)) => {
-                m["content"] = json!(text);
+            Ok(o) => {
+                m["content"] = json!(o.text.clone());
                 m["lc_e2e"] = json!(true);
-            }
-            Ok(e2e::Opened::Stale(text)) => {
-                m["content"] = json!(text);
-                m["lc_e2e"] = json!(true);
-                m["lc_e2e_stale"] = json!(true);
+                if o.stale {
+                    m["lc_e2e_stale"] = json!(true);
+                }
+                if let Some(peer) = &keep {
+                    self.e2e.copies.put(peer, &id, &sender, &o);
+                }
+                self.e2e_attach(m, &id, &o.files);
             }
             Err(e2e::E2eError::Broken) => m["lc_e2e_failed"] = json!(true),
             Err(e2e::E2eError::Untrusted) => m["lc_e2e_untrusted"] = json!(true),
+            // Its epoch's one-time secret is gone (deleted after renewing, or lost): from the
+            // local copy if there is one, otherwise unreadable for good.
+            Err(e @ (e2e::E2eError::Expired | e2e::E2eError::NoKey)) => match keep.as_ref().and_then(|p| self.e2e.copies.get(p, &id, &sender)) {
+                Some(entry) => {
+                    m["content"] = json!(entry.text);
+                    m["lc_e2e"] = json!(true);
+                    m["lc_e2e_from_copy"] = json!(true);
+                    self.e2e_attach(m, &id, &entry.files);
+                }
+                None => {
+                    m["lc_e2e_locked"] = json!(true);
+                    if e == e2e::E2eError::Expired {
+                        m["lc_e2e_expired"] = json!(true);
+                    }
+                }
+            },
             Err(_) => m["lc_e2e_locked"] = json!(true),
         }
+    }
+
+    /// A v2 message's encrypted files: Discord's .bin attachments, each matched to its key by its
+    /// random name, shown as LockCord's own (`lcenc:` paths, decrypted in Rust). The keys stay
+    /// here; an attachment no key names is left as it is.
+    fn e2e_attach(&mut self, m: &mut Value, id: &str, files: &[e2e::FileRef]) {
+        if files.is_empty() {
+            return;
+        }
+        let Some(list) = m["attachments"].as_array().cloned() else { return };
+        let mut out = Vec::with_capacity(list.len());
+        for a in list {
+            let name = a["filename"].as_str().unwrap_or("");
+            let Some(i) = files.iter().position(|f| efile::upload_name(&f.id) == name) else {
+                out.push(a);
+                continue;
+            };
+            let Some(url) = a["url"].as_str().filter(|u| media::allowed(u).is_some()) else { continue };
+            let key = format!("{id}:{i}");
+            if self.e2e.files.len() > 5000 {
+                self.e2e.files.clear();
+            }
+            self.e2e.files.insert(key.clone(), (files[i].clone(), url.to_owned()));
+            let meta = self.e2e.file_meta.get(&key);
+            out.push(json!({
+                "id": a["id"], "filename": meta.map(|m| m.0.clone()).unwrap_or_else(|| "Encrypted file".to_owned()),
+                "size": meta.map(|m| m.2).unwrap_or(0), "content_type": meta.and_then(|m| m.1),
+                "url": format!("lcenc:{key}"), "proxy_url": null, "lc_enc": key,
+            }));
+        }
+        m["attachments"] = json!(out);
+    }
+
+    /// The encrypted files of a message opened here, in its frame's order (an edit keeps them).
+    fn e2e_files_of(&self, message_id: &str) -> Vec<e2e::FileRef> {
+        let mut found: Vec<(usize, e2e::FileRef)> = self
+            .e2e
+            .files
+            .iter()
+            .filter_map(|(k, (f, _))| {
+                let (m, i) = k.split_once(':')?;
+                (m == message_id).then_some(())?;
+                Some((i.parse().ok()?, f.clone()))
+            })
+            .collect();
+        found.sort_by_key(|(i, _)| *i);
+        found.into_iter().map(|(_, f)| f).collect()
+    }
+
+    /// Whether files can go encrypted to `peer`: only in a v2 epoch.
+    fn e2e_files_ok(&self, peer: &str) -> bool {
+        let Some(identity) = self.e2e.identity.as_ref() else { return false };
+        self.e2e.book.contacts.get(peer).and_then(|c| c.current_pair(identity.public.as_bytes())).is_some_and(|(m, _)| m.is_v2())
     }
 
     /// What the UI may know: the contacts (no keys), their DMs, the problem if any.
@@ -224,7 +314,7 @@ impl Live {
             contacts.push(json!({ "peer": peer, "status": "lost", "channel": channel_of(peer) }));
         }
         let notice = self.e2e.book.code_upgraded.then_some("Safety codes are longer now (60 digits), so earlier comparisons were cleared. Compare the new code once more with each contact.");
-        json!({ "contacts": contacts, "problem": self.e2e.problem, "notice": notice })
+        json!({ "contacts": contacts, "problem": self.e2e.problem.clone().or(self.e2e.copies.problem.clone()), "notice": notice })
     }
 
     fn me_id(&self) -> String {
@@ -455,6 +545,7 @@ async fn start_session(app: AppHandle, token: String, save: bool) -> Result<Valu
     emit(&app, "lc://session", json!({ "signedIn": true, "me": user_view(&me) }));
 
     tauri::async_runtime::spawn(gateway::run(token.clone(), tx, outbound_rx, stopped));
+    tauri::async_runtime::spawn(e2e_loop(app.clone(), guard_stop.clone()));
     tauri::async_runtime::spawn(guard_loop(app.clone(), guard_stop));
     let pump = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -873,6 +964,10 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
             } else if name == "MESSAGE_DELETE" {
                 if let Some(id) = data["id"].as_str() {
                     live.own.remove(id);
+                    if let Some(peer) = live.dm_peer(channel) {
+                        live.e2e.copies.remove(&peer, id);
+                        e2e_save_seen(app, state, live);
+                    }
                 }
             }
             drop(guard);
@@ -1002,7 +1097,7 @@ async fn messages(app: AppHandle, state: State<'_, App>, channel_id: String, bef
 // "@ OFF" does. `attachments` are files `upload_attachment` put on Discord's bucket. In an
 // encrypted DM the text is sealed here, always, unless `plain` is true for this one message.
 #[tauri::command]
-async fn send_message(state: State<'_, App>, channel_id: String, content: String, reply_to: Option<String>, ping: Option<bool>, attachments: Option<Vec<Upload>>, plain: Option<bool>) -> Result<Value, String> {
+async fn send_message(app: AppHandle, state: State<'_, App>, channel_id: String, content: String, reply_to: Option<String>, ping: Option<bool>, attachments: Option<Vec<Upload>>, plain: Option<bool>) -> Result<Value, String> {
     let attachments = attachments.unwrap_or_default();
     let nothing = content.trim().is_empty() && attachments.is_empty();
     if !is_id(&channel_id) || nothing || content.chars().count() > MAX_CONTENT || attachments.len() > 10 || reply_to.as_deref().is_some_and(|r| !is_id(r)) {
@@ -1010,11 +1105,13 @@ async fn send_message(state: State<'_, App>, channel_id: String, content: String
     }
     // Only files this client uploaded, each sent once.
     let guild_id;
-    let (clean_links, no_embeds) = {
+    let (clean_links, no_embeds, renew_every) = {
         let p = state.privacy.lock().unwrap();
-        (p.clean_links, p.no_embeds)
+        (p.clean_links, p.no_embeds, p.e2e_renew)
     };
     let mut content = if clean_links { clean::clean_links(&content) } else { content };
+    // The encrypted DM's other side, when this message is sealed.
+    let mut sealed_to = None;
     {
         let mut guard = state.live.lock().unwrap();
         let live = guard.as_mut().ok_or("Not signed in.")?;
@@ -1033,13 +1130,17 @@ async fn send_message(state: State<'_, App>, channel_id: String, content: String
             }
         }
         if let Some(peer) = live.encrypted_peer(&channel_id).filter(|_| plain != Some(true)) {
-            if !attachments.is_empty() {
-                return Err("Files can't go encrypted yet. Send them unencrypted on purpose, or not at all.".into());
-            }
-            content = seal_for(live, &peer, &channel_id, &content)?;
+            // Only files encrypted for this go with it: their keys go into the sealed text.
+            let files = attachments.iter().map(|a| live.e2e.sealed_uploads.get(&a.uploaded_filename).cloned()).collect::<Option<Vec<_>>>().ok_or("Upload the files again.")?;
+            content = seal_for(live, &peer, &channel_id, &content, &files)?;
+            sealed_to = Some(peer);
+        } else if attachments.iter().any(|a| live.e2e.sealed_uploads.contains_key(&a.uploaded_filename)) {
+            // An encrypted file without its key would be noise to everyone.
+            return Err("Upload the files again.".into());
         }
         for a in &attachments {
             live.uploads.remove(&a.uploaded_filename);
+            live.e2e.sealed_uploads.remove(&a.uploaded_filename);
         }
     }
     let rest = rest_of(&state)?;
@@ -1064,6 +1165,13 @@ async fn send_message(state: State<'_, App>, channel_id: String, content: String
     if let Some(live) = state.live.lock().unwrap().as_mut() {
         live.note_own(&sent);
         live.e2e_open(&mut sent);
+        // Sent under the current epoch; if it's due for renewal, new keys are offered after it.
+        if let (Some(peer), Some(identity)) = (sealed_to, live.e2e.identity.as_ref()) {
+            let now = deletion::now_ms() + live.e2e.skew;
+            if live.e2e.book.renewal_due(identity, &live.me_id(), &peer, now, renew_every) && live.e2e.answering.insert(peer.clone()) {
+                tauri::async_runtime::spawn(e2e_post_key(app.clone(), peer, e2e::Role::Offer));
+            }
+        }
     }
     Ok(sent)
 }
@@ -1123,12 +1231,12 @@ fn notify_message(app: &AppHandle, state: &App, live: &Live, m: &Value, guild: O
 }
 
 // Sealed for an encrypted DM; an error, never plain text, when the keys aren't there.
-fn seal_for(live: &Live, peer: &str, channel: &str, text: &str) -> Result<String, String> {
+fn seal_for(live: &Live, peer: &str, channel: &str, text: &str, files: &[e2e::FileRef]) -> Result<String, String> {
     let identity = live.e2e.identity.as_ref().ok_or("Your encryption key is missing. Send unencrypted on purpose, or turn encryption on again.")?;
     if !live.e2e.book.contacts.contains_key(peer) {
         return Err("The keys for this encrypted DM are missing. Turn encryption on again, or send unencrypted on purpose.".into());
     }
-    live.e2e.book.seal(identity, peer, channel, &live.me_id(), text, deletion::now_ms())
+    live.e2e.book.seal(identity, peer, channel, &live.me_id(), text, files, deletion::now_ms())
 }
 
 fn check_own(state: &App, channel_id: &str, message_id: &str) -> Result<(), String> {
@@ -1151,7 +1259,7 @@ async fn edit_message(state: State<'_, App>, channel_id: String, message_id: Str
         let guard = state.live.lock().unwrap();
         let live = guard.as_ref().ok_or("Not signed in.")?;
         match live.encrypted_peer(&channel_id).filter(|_| plain != Some(true)) {
-            Some(peer) => seal_for(live, &peer, &channel_id, &content)?,
+            Some(peer) => seal_for(live, &peer, &channel_id, &content, &live.e2e_files_of(&message_id))?,
             None => content,
         }
     };
@@ -1182,8 +1290,14 @@ fn queue_of(state: &App) -> Result<deletion::Queue, String> {
 fn load_e2e(app: &AppHandle, state: &App, me: &str) -> E2eState {
     let pinned = e2e::load_pinned(&state.profile);
     let identity = e2e::load_identity(&state.profile);
+    // This side's one-time secrets (e2e_store.rs): without them v2 epochs can't be opened.
+    let (secrets, secrets_problem) = match store(app, state).map(|s| e2e_store::load_secrets(&s, &state.profile)) {
+        Ok(Ok(map)) => (map, None),
+        Ok(Err(e)) => (HashMap::new(), Some(e)),
+        Err(_) => (HashMap::new(), None),
+    };
     let (book, problem) = match (&identity, store(app, state)) {
-        (Some(id), Ok(store)) => match e2e::Book::load(id, me, &store.read_json("contacts.json")) {
+        (Some(id), Ok(store)) => match e2e::Book::load(id, me, &store.read_json("contacts.json"), secrets) {
             Ok(book) => (book, None),
             Err(e) => (e2e::Book::default(), Some(e)),
         },
@@ -1196,16 +1310,47 @@ fn load_e2e(app: &AppHandle, state: &App, me: &str) -> E2eState {
             let _ = store.write_json("contacts.json", &book.to_json(id));
         }
     }
-    let problem = problem.or_else(|| {
+    let problem = problem.or(secrets_problem).or_else(|| {
         let missing = pinned.iter().filter(|p| !book.contacts.contains_key(*p)).count();
         (missing > 0).then(|| format!("The keys for {missing} encrypted DM{} are missing; sending there is blocked until encryption is turned on again.", if missing == 1 { "" } else { "s" }))
+    }).or_else(|| {
+        let missing = identity.as_ref().map(|id| book.keys_missing(id, me)).unwrap_or(0);
+        (missing > 0).then(|| format!("This device's one-time keys for {missing} encrypted DM{} are missing. Renew the keys in {}.", if missing == 1 { "" } else { "s" }, if missing == 1 { "that DM" } else { "those DMs" }))
     });
-    E2eState { identity, book, pinned, answering: HashSet::new(), problem }
+    let copies = history::Copies::new(store(app, state).ok(), &state.profile);
+    let mut e2e = E2eState { identity, book, pinned, answering: HashSet::new(), problem, skew: 0, copies, ..E2eState::default() };
+    if let Ok(store) = store(app, state) {
+        e2e_retire(&store, &state.profile, &mut e2e, me);
+    }
+    e2e
 }
 
-fn save_e2e(app: &AppHandle, state: &App, live: &Live) -> Result<(), String> {
+// One-time secrets past their grace time deleted for good (the file then sealed under a new key),
+// and the secrets saved if anything changed. True if any were deleted.
+fn e2e_retire(store: &settings::Store, profile: &str, e2e: &mut E2eState, me: &str) -> bool {
+    let Some(identity) = e2e.identity.as_ref() else { return false };
+    let now = deletion::now_ms() + e2e.skew;
+    let deleted = e2e.book.retire(identity, me, now, e2e_store::GRACE_MS, e2e_store::ORPHAN_MS);
+    if let Err(e) = e2e_save_secrets(store, profile, e2e, deleted > 0) {
+        e2e.problem = Some(format!("Couldn't save the encryption secrets: {e}"));
+    }
+    deleted > 0
+}
+
+fn e2e_save_secrets(store: &settings::Store, profile: &str, e2e: &mut E2eState, rotate: bool) -> Result<(), String> {
+    if !e2e.book.secrets_dirty && !rotate {
+        return Ok(());
+    }
+    e2e_store::save_secrets(store, profile, &e2e.book.ephemerals, rotate)?;
+    e2e.book.secrets_dirty = false;
+    Ok(())
+}
+
+fn save_e2e(app: &AppHandle, state: &App, live: &mut Live) -> Result<(), String> {
     let identity = live.e2e.identity.as_ref().ok_or("No encryption key.")?;
-    store(app, state)?.write_json("contacts.json", &live.e2e.book.to_json(identity))?;
+    let store = store(app, state)?;
+    store.write_json("contacts.json", &live.e2e.book.to_json(identity))?;
+    e2e_save_secrets(&store, &state.profile, &mut live.e2e, false)?;
     e2e::save_pinned(&state.profile, &live.e2e.pinned)
 }
 
@@ -1218,10 +1363,18 @@ fn e2e_save_seen(app: &AppHandle, state: &App, live: &mut Live) {
     if live.e2e.book.seen_dirty && save_e2e(app, state, live).is_ok() {
         live.e2e.book.seen_dirty = false;
     }
+    if let Err(e) = live.e2e.copies.save() {
+        live.e2e.copies.problem = Some(format!("Couldn't save the local copy of an encrypted DM: {e}"));
+    }
 }
 
 // After a key message was recorded: kept on disk, the UI told, and an offer answered.
 fn e2e_after_key(app: &AppHandle, state: &App, live: &mut Live, (peer, event, answer): (String, e2e::Event, bool)) {
+    // A new epoch may have replaced one: its one-time secret starts its grace time.
+    if let Ok(store) = store(app, state) {
+        let me = live.me_id();
+        e2e_retire(&store, &state.profile, &mut live.e2e, &me);
+    }
     if let Err(e) = save_e2e(app, state, live) {
         live.e2e.problem = Some(format!("Couldn't save the encryption contacts: {e}"));
     }
@@ -1243,10 +1396,26 @@ async fn e2e_post_key(app: AppHandle, peer: String, role: e2e::Role) -> Result<(
         let mut guard = state.live.lock().unwrap();
         let live = guard.as_mut().ok_or("Not signed in.")?;
         let channel = live.dms.iter().find(|d| d["type"] == 1 && d["recipients"][0]["id"] == peer.as_str()).and_then(|d| d["id"].as_str()).map(str::to_owned);
-        match (channel, live.e2e.identity.as_ref()) {
-            (Some(channel), Some(identity)) => e2e::random32().map(|nonce| (channel, e2e::key_message(identity, &nonce, role), live.rest.clone())),
-            _ => Err("No DM or key for that.".to_owned()),
-        }
+        (|| -> Result<(String, String, Arc<rest::Rest>), String> {
+            let channel = channel.ok_or("No DM for that.")?;
+            if live.e2e.identity.is_none() {
+                return Err("No encryption key.".into());
+            }
+            // Offers are v2; an answer goes out in the version of the offer it answers (an older
+            // LockCord can't read a v2 key message).
+            let v2 = role == e2e::Role::Offer || live.e2e.book.contacts.get(&peer).is_none_or(|c| c.answer_v2());
+            let ephemeral = if v2 {
+                let ek = live.e2e.book.new_ephemeral(deletion::now_ms())?;
+                // On disk before the key message goes out: a one-time key whose secret was lost
+                // would leave that epoch unreadable here.
+                e2e_save_secrets(&store(&app, &state)?, &state.profile, &mut live.e2e, false)?;
+                Some(ek)
+            } else {
+                None
+            };
+            let identity = live.e2e.identity.as_ref().ok_or("No encryption key.")?;
+            Ok((channel, e2e::key_message(identity, ephemeral.as_ref(), &e2e::random32()?, role), live.rest.clone()))
+        })()
     };
     let result = match prepared {
         Ok((channel, content, rest)) => {
@@ -1345,15 +1514,56 @@ fn e2e_verify(app: AppHandle, state: State<App>, peer_id: String, verified: bool
     Ok(())
 }
 
+// The user's answer to "keep a local copy of this DM?" (asked per DM). No erases the copy.
+#[tauri::command]
+fn e2e_keep_copy(app: AppHandle, state: State<App>, peer_id: String, keep: bool) -> Result<(), String> {
+    if !is_id(&peer_id) {
+        return Err("Not a user.".into());
+    }
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    if !live.e2e.book.set_keep_copy(&peer_id, keep) {
+        return Err("Encryption isn't on with them.".into());
+    }
+    if !keep {
+        let others: Vec<String> = live.e2e.book.contacts.keys().cloned().collect();
+        live.e2e.copies.erase(&peer_id, &others)?;
+    }
+    save_e2e(&app, &state, live)?;
+    e2e_changed(&app, live);
+    Ok(())
+}
+
+// The DM's local copy deleted (keeping one from now on stays as chosen).
+#[tauri::command]
+fn e2e_erase_copy(app: AppHandle, state: State<App>, peer_id: String) -> Result<(), String> {
+    if !is_id(&peer_id) {
+        return Err("Not a user.".into());
+    }
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    let others: Vec<String> = live.e2e.book.contacts.keys().cloned().collect();
+    live.e2e.copies.erase(&peer_id, &others)?;
+    e2e_changed(&app, live);
+    Ok(())
+}
+
 // Forgetting a contact: its keys go, so its encrypted history can't be read again, and the DM is
 // plain again.
 #[tauri::command]
 fn e2e_forget(app: AppHandle, state: State<App>, peer_id: String) -> Result<(), String> {
+    if !is_id(&peer_id) {
+        return Err("Not a user.".into());
+    }
     let mut guard = state.live.lock().unwrap();
     let live = guard.as_mut().ok_or("Not signed in.")?;
     live.e2e.book.forget(&peer_id);
     live.e2e.pinned.remove(&peer_id);
+    let others: Vec<String> = live.e2e.book.contacts.keys().cloned().collect();
+    live.e2e.copies.erase(&peer_id, &others)?;
     if live.e2e.identity.is_some() {
+        // Their one-time secrets are gone: the secrets file gets a new key too.
+        e2e_save_secrets(&store(&app, &state)?, &state.profile, &mut live.e2e, true)?;
         save_e2e(&app, &state, live)?;
     } else {
         e2e::save_pinned(&state.profile, &live.e2e.pinned)?;
@@ -2326,6 +2536,24 @@ async fn guard_wipe(app: AppHandle, rule: guard::Rule) {
     emit(&app, "lc://guard", json!({ "text": format!("Guard wiped {deleted} message{} in {name}.", if deleted == 1 { "" } else { "s" }) }));
 }
 
+// Every hour: one-time secrets past their grace time are deleted (e2e.rs `retire`).
+async fn e2e_loop(app: AppHandle, mut stop: watch::Receiver<bool>) {
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3600)) => {}
+            _ = stop.changed() => return,
+        }
+        let state = app.state::<App>();
+        let Ok(store) = store(&app, &state) else { continue };
+        let mut guard = state.live.lock().unwrap();
+        let Some(live) = guard.as_mut() else { return };
+        let me = live.me_id();
+        if e2e_retire(&store, &state.profile, &mut live.e2e, &me) {
+            e2e_changed(&app, live);
+        }
+    }
+}
+
 // An encrypted DM's message fetched outside the usual paths (Purge, Guard's sweep), opened.
 fn e2e_open_for(app: &AppHandle, m: &mut Value) {
     if let Some(live) = app.state::<App>().live.lock().unwrap().as_mut() {
@@ -2424,17 +2652,29 @@ async fn upload_attachment(state: State<'_, App>, request: tauri::ipc::Request<'
     // Photo metadata (GPS, camera, time) is taken out before anything leaves.
     let bytes = if clean_uploads { clean::strip_metadata(bytes.clone())? } else { bytes.clone() };
     let filename = if generic { clean::generic_name(&filename) } else { filename };
-    let limit = {
+    let (seal, limit) = {
         let guard = state.live.lock().unwrap();
         let live = guard.as_ref().ok_or("Not signed in.")?;
-        // A file for an encrypted DM would sit on Discord's bucket in the clear: only on purpose.
-        if live.encrypted_peer(&channel_id).is_some() && header("lc-plain").as_deref() != Some("1") {
-            return Err("Files can't go encrypted yet. Send them unencrypted on purpose, or not at all.".into());
+        // A file for an encrypted DM is encrypted here first, unless it goes plain on purpose.
+        let seal = live.encrypted_peer(&channel_id).filter(|_| header("lc-plain").as_deref() != Some("1"));
+        if seal.as_ref().is_some_and(|peer| !live.e2e_files_ok(peer)) {
+            return Err("Their LockCord is older and can't open encrypted files yet. Send them unencrypted on purpose, or wait until they update.".into());
         }
-        live.upload_limit
+        (seal.is_some(), live.upload_limit)
     };
     if bytes.is_empty() || bytes.len() > limit {
         return Err(format!("Files can be up to {} MB here.", limit / (1024 * 1024)));
+    }
+    // Sealed: Discord gets a random name and a padded size (efile.rs); the real name and type are
+    // inside, the key goes into the message.
+    let (bytes, filename, sealed) = if seal {
+        let (blob, file) = efile::encrypt(&bytes, &filename, efile::sniff(&bytes).unwrap_or(""))?;
+        (blob, efile::upload_name(&file.id), Some(file))
+    } else {
+        (bytes, filename, None)
+    };
+    if bytes.len() > limit {
+        return Err(format!("Encrypted, that file is just over the {} MB limit.", limit / (1024 * 1024)));
     }
 
     let rest = rest_of(&state)?;
@@ -2460,8 +2700,14 @@ async fn upload_attachment(state: State<'_, App>, request: tauri::ipc::Request<'
     }
     if let Some(live) = state.live.lock().unwrap().as_mut() {
         live.uploads.insert(uploaded.clone());
+        if let Some(file) = sealed.clone() {
+            if live.e2e.sealed_uploads.len() > 64 {
+                live.e2e.sealed_uploads.clear();
+            }
+            live.e2e.sealed_uploads.insert(uploaded.clone(), file);
+        }
     }
-    Ok(json!({ "filename": filename, "uploaded_filename": uploaded }))
+    Ok(json!({ "filename": filename, "uploaded_filename": uploaded, "encrypted": sealed.is_some() }))
 }
 
 #[derive(serde::Deserialize)]
@@ -3196,6 +3442,22 @@ fn debug_drop_gateway(state: State<App>) -> Result<(), String> {
     live.outbound.try_send(json!({ "lc_debug_drop": true })).map_err(|e| e.to_string())
 }
 
+// Debug builds only: moves the encryption clock forward by `days` (8 shows a deletion after
+// renewing, 7 or 30 a renewal), so rotation can be tried without waiting.
+#[tauri::command]
+fn debug_e2e_age(app: AppHandle, state: State<App>, days: u64) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("Only in debug builds.".into());
+    }
+    let mut guard = state.live.lock().unwrap();
+    let live = guard.as_mut().ok_or("Not signed in.")?;
+    live.e2e.skew += days.min(60) * 24 * 60 * 60 * 1000;
+    let me = live.me_id();
+    e2e_retire(&store(&app, &state)?, &state.profile, &mut live.e2e, &me);
+    e2e_changed(&app, live);
+    Ok(())
+}
+
 // The panic key: LockCord hides in the tray at once, and the microphone goes quiet in a call.
 fn panic(app: &AppHandle) {
     let state = app.state::<App>();
@@ -3243,6 +3505,41 @@ async fn pick_save_folder(app: AppHandle, state: State<'_, App>) -> Result<Value
     Ok(json!({ "folder": folder_name(&dir) }))
 }
 
+// An encrypted DM's file ("<message id>:<index>" of a message opened here): fetched from Discord's
+// hosts, decrypted, and kept decrypted in memory only (the media cache). (name, type shown inline
+// if any, size) and its bytes.
+async fn e2e_file(app: &AppHandle, key: &str) -> Result<((String, Option<&'static str>, u64), Arc<Vec<u8>>), String> {
+    let state = app.state::<App>();
+    let cache_key = format!("lcenc:{key}");
+    let known = state.live.lock().unwrap().as_ref().map(|l| (l.e2e.files.get(key).cloned(), l.e2e.file_meta.get(key).cloned()));
+    let Some((file, meta)) = known else { return Err("Not signed in.".into()) };
+    let cached = state.media.lock().unwrap().get(&cache_key);
+    if let (Some(meta), Some((_, bytes))) = (meta, cached) {
+        return Ok((meta, bytes));
+    }
+    let (file, url) = file.ok_or("That file isn't known here.")?;
+    let blob = media::download(&state.media_http, &url, desktop::MAX_SAVE + desktop::MAX_SAVE / 4).await?;
+    let (meta, plain) = efile::decrypt(&blob, &file)?;
+    let shown = efile::sniff(&plain);
+    let info = (media::clean_name(&meta.name).unwrap_or_else(|| "file".to_owned()), shown, meta.size);
+    let bytes = Arc::new(plain.to_vec());
+    state.media.lock().unwrap().put(cache_key, shown.unwrap_or("application/octet-stream"), bytes.clone());
+    if let Some(live) = state.live.lock().unwrap().as_mut() {
+        live.e2e.file_meta.insert(key.to_owned(), info.clone());
+    }
+    Ok((info, bytes))
+}
+
+// What an encrypted DM's file is, for its card: name, type shown inline (if any), size.
+#[tauri::command]
+async fn e2e_file_info(app: AppHandle, message_id: String, index: u32) -> Result<Value, String> {
+    if !is_id(&message_id) || index as usize >= e2e::MAX_FILES {
+        return Err("bad file".into());
+    }
+    let ((name, shown, size), _) = e2e_file(&app, &format!("{message_id}:{index}")).await?;
+    Ok(json!({ "name": name, "type": shown, "size": size }))
+}
+
 // A message's files, saved: from Discord's hosts only, under safe names, marked as from the internet.
 #[tauri::command]
 async fn save_media(app: AppHandle, state: State<'_, App>, files: Vec<Value>) -> Result<Value, String> {
@@ -3257,7 +3554,14 @@ async fn save_media(app: AppHandle, state: State<'_, App>, files: Vec<Value>) ->
         let url = f["url"].as_str().unwrap_or("");
         let name = desktop::safe_name(f["filename"].as_str().unwrap_or("file"));
         let result = async {
-            let bytes = media::download(&state.media_http, url, desktop::MAX_SAVE).await?;
+            let (name, bytes) = match url.strip_prefix("lcenc:") {
+                // An encrypted DM's file: decrypted, under the name inside it.
+                Some(key) => {
+                    let ((real, _, _), bytes) = e2e_file(&app, key).await?;
+                    (desktop::safe_name(&real), bytes.to_vec())
+                }
+                None => (name.clone(), media::download(&state.media_http, url, desktop::MAX_SAVE).await?),
+            };
             let (path, mut file) = desktop::reserve(&dir, &name)?;
             use std::io::Write;
             file.write_all(&bytes).map_err(|e| e.to_string())?;
@@ -3320,6 +3624,12 @@ fn serve_media(ctx: tauri::UriSchemeContext<'_, tauri::Wry>, request: tauri::htt
     tauri::async_runtime::spawn(async move {
         let state = app.state::<App>();
         let fetched = match url {
+            // An encrypted DM's file: decrypted here; inline only if its bytes are a picture or video.
+            Some(url) if url.starts_with("lcenc:") => match e2e_file(&app, &url["lcenc:".len()..]).await {
+                Ok(((_, Some(kind), _), bytes)) => Ok((kind, bytes)),
+                Ok(_) => Err("not shown inline".to_owned()),
+                Err(e) => Err(e),
+            },
             Some(url) => media::fetch(&state.media_http, &state.media, &url).await,
             None => Err("bad media path".into()),
         };
@@ -3365,7 +3675,7 @@ fn main() {
             privacy: Mutex::new(privacy::Privacy::default()), secret_on_screen: AtomicBool::new(false), shield_up: Mutex::new(None) })
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites, shield_hint, copy_text, net_log, debug_drop_gateway]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites, shield_hint, copy_text, net_log, debug_drop_gateway, debug_e2e_age, e2e_keep_copy, e2e_erase_copy, e2e_file_info]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);
@@ -3490,7 +3800,7 @@ mod tests {
         let rest = Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()));
         let mine = e2e::Identity::for_tests([1u8; 32]);
         let bob = e2e::Identity::for_tests([2u8; 32]);
-        let ann = |id: &str, who: &e2e::Identity, n: u8, role| e2e::Announcement { id: id.into(), key: *who.public.as_bytes(), nonce: [n; 32], role, at: 1 };
+        let ann = |id: &str, who: &e2e::Identity, n: u8, role| e2e::Announcement { id: id.into(), key: *who.public.as_bytes(), ephemeral: None, nonce: [n; 32], role, at: 1 };
         let (offer, answer) = (ann("10", &mine, 7, e2e::Role::Offer), ann("11", &bob, 9, e2e::Role::Answer));
         let mut book = e2e::Book::default();
         if with_keys {
@@ -3505,7 +3815,7 @@ mod tests {
             own: HashSet::new(), upload_limit: 0, uploads: HashSet::new(), relationships: Vec::new(), presences: HashMap::new(), customs: HashMap::new(), reads: HashMap::new(),
             guilds: Vec::new(), guild_order: Vec::new(), muted: (Vec::new(), Vec::new()), outbound: mpsc::channel(1).0, subscribed: None,
             queue: deletion::Queue::start(Arc::new(rest::Rest::new(reqwest::Client::new(), String::new()))), guard: Vec::new(), wiping: HashSet::new(), purge: None,
-            e2e: E2eState { identity: Some(mine), book, pinned: HashSet::from(["200".to_owned()]), answering: HashSet::new(), problem: None },
+            e2e: E2eState { identity: Some(mine), book, pinned: HashSet::from(["200".to_owned()]), answering: HashSet::new(), problem: None, skew: 0, ..E2eState::default() },
             my_status: Value::Null, dm_ok: HashSet::new(), calls: call::Calls::default(),
         };
         (live, theirs, bob)
@@ -3515,7 +3825,7 @@ mod tests {
     async fn encrypted_dms_open_only_where_they_belong() {
         let (mut live, theirs, bob) = e2e_live(true);
         let id = deletion::snowflake_at(deletion::now_ms()).to_string();
-        let sealed = theirs.seal(&bob, "100", "555", "200", "meet at 6", deletion::now_ms()).unwrap();
+        let sealed = theirs.seal(&bob, "100", "555", "200", "meet at 6", &[], deletion::now_ms()).unwrap();
         let mut m = json!({ "id": id, "channel_id": "555", "author": { "id": "200" }, "content": sealed });
         live.e2e_open(&mut m);
         assert_eq!((m["content"].as_str(), m["lc_e2e"].as_bool()), (Some("meet at 6"), Some(true)));
@@ -3537,14 +3847,14 @@ mod tests {
 
         assert_eq!(live.encrypted_peer("555").as_deref(), Some("200"));
         assert_eq!(live.encrypted_peer("556"), None);
-        assert!(seal_for(&live, "200", "555", "hi").unwrap().starts_with("LC1:"));
+        assert!(seal_for(&live, "200", "555", "hi", &[]).unwrap().starts_with("LC1:"));
     }
 
     #[tokio::test]
     async fn a_pinned_dm_without_keys_refuses_rather_than_going_plain() {
         let (live, _, _) = e2e_live(false);
         assert_eq!(live.encrypted_peer("555").as_deref(), Some("200"), "pinned in Credential Manager");
-        assert!(seal_for(&live, "200", "555", "hi").is_err());
+        assert!(seal_for(&live, "200", "555", "hi", &[]).is_err());
     }
 
     #[tokio::test]

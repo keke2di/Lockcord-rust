@@ -23,6 +23,8 @@ pub enum Shield {
     Off,
 }
 
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+
 #[derive(Clone, Debug)]
 pub struct Privacy {
     pub shield: Shield,
@@ -34,6 +36,8 @@ pub struct Privacy {
     pub clean_links: bool,
     pub no_embeds: bool,
     pub clipboard: bool,
+    /// How often encrypted DMs get new keys (e2e.rs `renewal_due`), in ms.
+    pub e2e_renew: u64,
 }
 
 impl Default for Privacy {
@@ -60,6 +64,11 @@ impl Privacy {
             clean_links: flag("cleanLinks", true),
             no_embeds: flag("noEmbeds", false),
             clipboard: flag("clipboard", true),
+            e2e_renew: match v["e2eRenew"].as_str() {
+                Some("daily") => DAY_MS,
+                Some("monthly") => 30 * DAY_MS,
+                _ => 7 * DAY_MS,
+            },
         }
     }
 

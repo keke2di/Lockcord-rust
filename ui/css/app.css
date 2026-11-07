@@ -1625,6 +1625,14 @@ button:disabled { cursor: not-allowed; }
 .e2e-note { margin-top: 2px; font-size: 0.75rem; font-style: italic; color: var(--lc-muted); }
 .e2e-note.warn { color: var(--lc-warning); font-style: normal; }
 .e2e-note.plain { font-style: normal; }
+/* Encrypted files (efile.rs): decrypted in Rust, shown here once they are. */
+.e2e-file-box { margin-top: 4px; max-width: 100%; }
+.e2e-file .file-icon { color: var(--lc-e2e, var(--lc-success, #3ba55d)); }
+.e2e-file.warn .file-size { color: var(--lc-warning); }
+.e2e-image { display: block; max-width: min(400px, 100%); max-height: 300px; border-radius: 8px; cursor: zoom-in; object-fit: contain; }
+.e2e-video { display: block; max-width: min(400px, 100%); max-height: 300px; border-radius: 8px; background: #000; }
+/* The encrypted pill's question while the DM's local copy is unanswered. */
+.e2e-ask { margin-left: 6px; align-self: center; font-size: 0.75rem; font-weight: 600; color: var(--lc-warning); }
 .composer.e2e { box-shadow: inset 0 0 0 1px var(--lc-secret); }
 .composer.plain-next { box-shadow: inset 0 0 0 1px var(--lc-warning); }
 .notice.warn { background: color-mix(in srgb, var(--lc-warning) 14%, transparent); }
