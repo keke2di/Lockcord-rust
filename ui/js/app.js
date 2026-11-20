@@ -124,6 +124,7 @@ function showSignIn(reason, waiting) {
     h('p', null, waiting ? 'Sign in in the Discord window that opened. LockCord never sees your password.' : 'Sign in with your Discord account. Discord’s own login page opens in a separate window; LockCord never sees your password.'),
     h('button', { type: 'button', class: 'button brand wide', disabled: !!waiting, onclick: () => { api.signIn().then(() => showSignIn(null, true)).catch((e) => showSignIn(String(e))); } }, waiting ? 'Waiting for Discord…' : 'Sign in with Discord'),
     h('button', { type: 'button', class: 'button link', onclick: () => { tokenRow.hidden = !tokenRow.hidden; } }, 'Sign in with a token instead'),
+    h('button', { type: 'button', class: 'button link', disabled: !!waiting, onclick: showAccounts }, 'Switch accounts'),
     tokenRow,
     error,
     h('p', { class: 'fine-print' }, 'Third-party clients are against Discord’s Terms of Service, and accounts can be disabled for it. Use an account you can afford to lose.'))));
@@ -247,6 +248,7 @@ function pinSide(pinned) {
 }
 
 function showMain() {
+  if (layer.parentNode !== mainScreen) mainScreen.appendChild(layer);
   if (root.firstChild !== mainScreen) screen(mainScreen);
   refresh();
 }
@@ -454,6 +456,7 @@ function drawUserPanel() {
       'aria-pressed': state.sidePinned ? 'true' : 'false', onclick: () => pinSide(!state.sidePinned),
     }, icon(ICONS.pin, 18)));
     userPanel.appendChild(h('button', { type: 'button', class: 'panel-button', title: 'Sign out', onclick: () => { secret.shutdown(); api.signOut(); } }, icon(ICONS.close, 18)));
+    userPanel.appendChild(h('button', { type: 'button', class: 'panel-button', title: 'Switch accounts', 'aria-label': 'Switch accounts', onclick: showAccounts }, icon(ICONS.members, 18)));
   }
 }
 
@@ -1177,6 +1180,7 @@ function saveMedia(m) {
 
 function discordMenu(m, e) {
   const mine = isMine(m);
+  const canDelete = mine || !!dmById(m.channel_id)?.can_manage;
   menuAt(e, [
     ['Add Reaction', () => pickReaction(m, pointOf(e))],
     canReplyOnDiscord(m.channel_id) && ['Reply', () => replyToDiscord(m)],
@@ -1188,7 +1192,7 @@ function discordMenu(m, e) {
     ['Copy Message ID', () => copy(m.id)],
     mine && '-',
     mine && ['Select Message', () => startSelecting('discord:' + m.id)],
-    mine && ['Delete Message', (ev) => removeDiscord(m, ev.shiftKey), 'danger'],
+    canDelete && ['Delete Message', (ev) => removeDiscord(m, ev.shiftKey), 'danger'],
   ]);
 }
 
@@ -1686,13 +1690,14 @@ function openProfile(u, anchor, guildId) {
       () => api.relationship(u.id, 'block').catch((e) => showToast('Not blocked: ' + e)))),
     unblock: close(() => api.relationship(u.id, 'remove').catch((e) => showToast('Not unblocked: ' + e))),
     editStatus: close(() => showStatusMenu()),
+    moderate: (actions) => showModeration(u, guildId, actions),
   });
   const build = (p) => h('div', { class: 'popup profile-popout profile-full', role: 'dialog', 'aria-modal': 'true', 'aria-label': displayName(u), onclick: (e) => e.stopPropagation() }, profileCard(u, p, ctx()));
   const known = profiles.get(key);
   let node = build(known || null);
   showModal(node);
   layer.classList.add('profile-layer');
-  if (known) return;
+  if (known && !guildId) return;
   api.userProfile(u.id, guildId).then((p) => {
     profiles.set(key, p);
     remember(p.user);
@@ -1944,9 +1949,70 @@ document.addEventListener('keydown', (e) => {
 // A dialog of its own in the layer (closed by Escape, a click outside, or its buttons).
 function showModal(node) {
   closeLayer();
+  if (!layer.isConnected) root.appendChild(layer);
   layer.className = 'layer modal-layer top';
   layer.appendChild(h('div', { class: 'modal-backdrop', onclick: closeLayer }));
   layer.appendChild(node);
+}
+
+async function showAccounts() {
+  try {
+    const accounts = await api.accounts();
+    const error = h('div', { class: 'signin-error', role: 'alert' });
+    const input = h('input', { class: 'input', placeholder: 'e.g. personal or work', maxlength: 32, 'aria-label': 'New account label', autocomplete: 'off' });
+    let switching = false;
+    const switchTo = async (profile, create) => {
+      if (switching) return;
+      if (create && !/^[A-Za-z0-9_-]{1,32}$/.test(profile)) {
+        error.textContent = 'Use 1–32 letters, digits, hyphens or underscores.';
+        return;
+      }
+      const go = async () => {
+        switching = true;
+        for (const button of body.querySelectorAll('button')) button.disabled = true;
+        try { await api.switchAccount(profile, create); }
+        catch (e) { switching = false; showAccounts().then(() => showToast(String(e))); }
+      };
+      confirmAction('Switch accounts', 'LockCord will reopen for this account. Your saved logins stay signed in. Active calls and secret chats will end.', 'Switch', go);
+    };
+    const body = h('div', { class: 'modal account-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Switch accounts', onclick: (e) => e.stopPropagation() },
+      h('h2', { class: 'modal-title' }, 'Switch accounts'),
+      h('p', { class: 'modal-text' }, 'Each account keeps its own login, settings and encryption keys. Sign in once when you add an account.'),
+      h('div', { class: 'account-list' }, accounts.map((a) => h('button', { type: 'button', class: 'button secondary wide', disabled: a.current, onclick: () => switchTo(a.profile, false) },
+        (a.name || a.username || a.profile) + (a.username ? ' (@' + a.username + ')' : '') + ' · ' + a.profile + (a.current ? ' · Current' : '')))),
+      h('label', { class: 'modal-text' }, 'Add account', input), error,
+      h('div', { class: 'modal-buttons' }, h('button', { type: 'button', class: 'button link', onclick: closeLayer }, 'Close'),
+        h('button', { type: 'button', class: 'button brand', onclick: () => switchTo(input.value.trim(), true) }, 'Add account')));
+    showModal(body);
+  } catch (e) { showToast('Couldn’t load accounts: ' + e); }
+}
+
+function showModeration(user, guildId, actions) {
+  const action = h('select', { class: 'input', 'aria-label': 'Moderator action' },
+    actions.map((a) => h('option', { value: a }, ({ timeout: 'Timeout', untimeout: 'Remove timeout', kick: 'Kick from server', ban: 'Ban from server' })[a])));
+  const duration = h('select', { class: 'input', 'aria-label': 'Timeout duration' },
+    [[600, '10 minutes'], [3600, '1 hour'], [86400, '1 day'], [604800, '1 week']].map(([n, label]) => h('option', { value: String(n) }, label)));
+  const durationLabel = h('label', null, 'Duration', duration);
+  const update = () => { durationLabel.hidden = action.value !== 'timeout'; };
+  action.addEventListener('change', update);
+  update();
+  const reason = h('input', { class: 'input', maxlength: 512, placeholder: 'Optional audit log reason', 'aria-label': 'Audit log reason' });
+  showModal(h('div', { class: 'modal moderation-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Moderate member', onclick: (e) => e.stopPropagation() },
+    h('h2', { class: 'modal-title' }, 'Moderate ' + displayName(user)),
+    h('div', { class: 'moderation-fields' }, h('label', null, 'Action', action), durationLabel, h('label', null, 'Reason', reason)),
+    h('p', { class: 'modal-text' }, 'Kicking removes the member. Banning prevents them from rejoining and keeps their existing messages.'),
+    h('div', { class: 'modal-buttons' }, h('button', { type: 'button', class: 'button link', onclick: closeLayer }, 'Cancel'),
+      h('button', { type: 'button', class: 'button danger', onclick: () => {
+        const selected = action.value;
+        const until = selected === 'timeout' ? new Date(Date.now() + Number(duration.value) * 1000).toISOString() : null;
+        const auditReason = reason.value;
+        confirmAction('Confirm moderation', 'Apply “' + action.selectedOptions[0].textContent + '” to ' + displayName(user) + '?', 'Confirm', () => {
+          api.moderateMember(guildId, user.id, selected, until, auditReason).then(() => {
+            profiles.delete(user.id + '|' + guildId);
+            showToast('Moderation action completed.');
+          }).catch((e) => showToast('Moderation failed: ' + e));
+        });
+      } }, 'Continue'))));
 }
 
 // --- Updates (update.rs) -------------------------------------------------------------------------

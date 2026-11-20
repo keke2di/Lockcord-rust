@@ -1,0 +1,121 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/ui/css/app.css">
+<script type="module">
+const result = document.createElement('pre');
+result.id = 'test-result';
+const failures = [];
+window.addEventListener('error', (e) => failures.push(e.message));
+window.addEventListener('unhandledrejection', (e) => failures.push(String(e.reason)));
+const calls = [];
+// Keep app redraw scheduling deterministic under Chromium's accelerated virtual clock.
+window.requestAnimationFrame = (fn) => setTimeout(() => fn(performance.now()), 0);
+window.cancelAnimationFrame = clearTimeout;
+const listeners = new Map();
+const me = { id: '1', username: 'tester', global_name: 'Tester' };
+const member = { id: '2', username: 'member', global_name: 'Member' };
+const channel = { id: '1000', guild_id: '100', name: 'general', type: 0, can_send: true, can_history: true, can_manage: true, can_react: true };
+const guilds = Array.from({ length: 70 }, (_, i) => ({ id: String(100 + i), name: 'Server ' + i, roles: [], channels: i ? [] : [channel], threads: [] }));
+const message = { id: '1400000000000000000', channel_id: channel.id, guild_id: '100', type: 0, content: 'Hello from a member', author: member, timestamp: '2026-11-20T12:00:00Z', attachments: [] };
+window.__TAURI_INTERNALS__ = {
+  transformCallback: (fn) => fn,
+  convertFileSrc: () => 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=',
+  invoke: async (command, args) => {
+    calls.push({ command, args });
+    if (command === 'plugin:event|listen') { listeners.set(args.event, args.handler); return 1; }
+    if (command === 'status') return { signedIn: true, me, gateway: 'connected', guilds };
+    if (command === 'settings_get') return { settings: { theme: 'builtin:dark', display: {}, sidePinned: true, memberList: true } };
+    if (command === 'accounts_list') return [{ profile: 'default', current: true, name: 'Tester' }, { profile: 'work', name: 'Work user', username: 'workuser' }];
+    if (command === 'messages') return [message];
+    if (command === 'user_profile') return { user: member, member: { roles: [] }, moderation: ['timeout', 'untimeout', 'kick', 'ban'] };
+    if (command === 'guard_list') return [];
+    if (command === 'update_check') return {};
+    return null;
+  },
+};
+const assert = (condition, text) => { if (!condition) throw new Error(text); };
+const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
+const button = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent === text);
+try {
+  await import('/ui/js/app.js');
+  await document.fonts.ready;
+  await tick();
+  const rail = document.querySelector('.rail');
+  assert(rail, 'App should open with the mocked account');
+  assert(getComputedStyle(rail).overflowY === 'auto', 'Server rail must allow scrolling');
+  assert(rail.scrollHeight > rail.clientHeight, 'Long server lists must overflow: ' + JSON.stringify({ scroll: rail.scrollHeight, height: rail.clientHeight, rows: rail.children.length, errors: failures }));
+  const firstHeight = rail.querySelector('.rail-item').getBoundingClientRect().height;
+  assert(firstHeight >= 48, 'Server icons must not shrink');
+  rail.scrollTop = rail.scrollHeight;
+  rail.querySelector('button[title="Server 69"]').focus({ preventScroll: true });
+  const before = rail.scrollTop;
+  listeners.get('lc://guilds')({ payload: guilds });
+  await tick();
+  assert(rail.scrollTop === before, 'A redraw must preserve the server scroll position');
+  assert(document.activeElement.dataset.railId === '169', 'Redraws must preserve keyboard focus');
+  const last = rail.querySelector('button[title="Server 69"]').getBoundingClientRect();
+  assert(last.bottom <= rail.getBoundingClientRect().bottom, 'Last server must be reachable');
+
+  document.querySelector('[aria-label="Switch accounts"]').click();
+  await tick();
+  const accountBounds = document.querySelector('.account-modal').getBoundingClientRect();
+  assert(accountBounds.top >= 0 && accountBounds.bottom <= innerHeight, 'Account picker must fit the window');
+  assert(button('Tester · default · Current')?.disabled, 'Current account must be marked');
+  button('Work user (@workuser) · work').click();
+  button('Cancel').click();
+  assert(!calls.some((c) => c.command === 'account_switch'), 'Cancel must preserve the current account');
+  document.querySelector('[aria-label="Switch accounts"]').click();
+  await tick();
+  document.querySelector('[aria-label="New account label"]').value = '../bad';
+  button('Add account').click();
+  assert(document.querySelector('[role="alert"]').textContent.includes('1–32'), 'Invalid account labels must show an error');
+  document.querySelector('[aria-label="New account label"]').value = 'personal';
+  button('Add account').click();
+  button('Switch').click();
+  await tick();
+  assert(calls.some((c) => c.command === 'account_switch' && c.args.profile === 'personal' && c.args.create), 'Adding an account must use a separate profile');
+  assert(!calls.some((c) => c.command === 'sign_out'), 'Account switching must not sign out');
+
+  document.querySelector('button[title="Server 0"]').click();
+  await tick();
+  const row = document.querySelector('li[data-id="' + message.id + '"]');
+  assert(row, 'Server messages must load');
+  row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 200 }));
+  assert(button('Delete Message'), 'Moderators must be able to delete another member’s message');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  row.querySelector('.username').click();
+  await tick();
+  assert(button('Moderate'), 'Eligible profiles must expose moderator controls');
+  button('Moderate').click();
+  const moderationBounds = document.querySelector('.moderation-modal').getBoundingClientRect();
+  assert(moderationBounds.top >= 0 && moderationBounds.bottom <= innerHeight, 'Moderator controls must fit the window');
+  const action = document.querySelector('[aria-label="Moderator action"]');
+  assert(action.options.length === 4, 'Timeout, remove timeout, kick and ban must be available');
+  action.value = 'ban';
+  action.dispatchEvent(new Event('change'));
+  assert(document.querySelector('[aria-label="Timeout duration"]').parentElement.hidden, 'Ban must hide timeout duration');
+  document.querySelector('[aria-label="Audit log reason"]').value = 'Spam';
+  button('Continue').click();
+  assert(!calls.some((c) => c.command === 'moderate_member'), 'Moderation must wait for confirmation');
+  button('Confirm').click();
+  await tick();
+  assert(calls.some((c) => c.command === 'moderate_member' && c.args.action === 'ban' && c.args.reason === 'Spam' && c.args.until === null), 'Confirmed moderation must pass the action and reason');
+  guilds[0].channels[0].can_manage = false;
+  listeners.get('lc://guilds')({ payload: guilds });
+  await tick();
+  document.querySelector('li[data-id="' + message.id + '"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 200 }));
+  assert(!button('Delete Message'), 'Other members’ messages must not offer delete without Manage Messages');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  listeners.get('lc://session')({ payload: { signedIn: false } });
+  button('Switch accounts').click();
+  await tick();
+  assert(document.querySelector('[aria-label="New account label"]')?.isConnected, 'Account picker must work on the sign-in screen');
+  button('Work user (@workuser) · work').click();
+  button('Switch').click();
+  await tick();
+  assert(calls.some((c) => c.command === 'account_switch' && c.args.profile === 'work' && !c.args.create), 'Saved account selection must reuse the profile');
+  assert(!failures.length, failures.join('; '));
+  result.textContent = 'PASS: server scrolling, redraw preservation, account switching and moderator controls';
+} catch (e) { result.textContent = 'FAIL: ' + e.stack + '\n' + failures.join('\n'); }
+document.body.appendChild(result);
+</script>

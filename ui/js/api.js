@@ -20,6 +20,9 @@ export const api = {
   signIn: () => call('sign_in'),
   signInWithToken: (token) => call('sign_in_with_token', { token }),
   signOut: () => call('sign_out'),
+  accounts: () => call('accounts_list'),
+  switchAccount: (profile, create = false) => call('account_switch', { profile, create }),
+  moderateMember: (guildId, userId, action, until, reason) => call('moderate_member', { guildId, userId, action, until: until || null, reason }),
   // The newest 50, or 50 before / after / around a message (opts: { after } or { around }).
   messages: (channelId, before, opts) => call('messages', { channelId, before: before || null, after: (opts && opts.after) || null, around: (opts && opts.around) || null }),
   // plain: true sends this one message unencrypted in an encrypted DM; otherwise Rust seals it.

@@ -12,6 +12,8 @@
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
+pub const KICK_MEMBERS: u64 = 1 << 1;
+pub const BAN_MEMBERS: u64 = 1 << 2;
 pub const ADMINISTRATOR: u64 = 1 << 3;
 pub const ADD_REACTIONS: u64 = 1 << 6;
 pub const STREAM: u64 = 1 << 9;
@@ -25,6 +27,7 @@ pub const CONNECT: u64 = 1 << 20;
 pub const SPEAK: u64 = 1 << 21;
 pub const MANAGE_THREADS: u64 = 1 << 34;
 pub const SEND_MESSAGES_IN_THREADS: u64 = 1 << 38;
+pub const MODERATE_MEMBERS: u64 = 1 << 40;
 pub const PIN_MESSAGES: u64 = 1 << 51;
 
 // Channel types listed: 0 text, 2 voice and 13 stage (shown, not joinable), 4 category,
@@ -130,6 +133,23 @@ impl Guild {
             b |= self.role_bits(role);
         }
         if b & ADMINISTRATOR != 0 { u64::MAX } else { b }
+    }
+
+    /// Conservative hierarchy check: equal role positions cannot moderate each other.
+    pub fn moderation_actions(&self, me: &str, user: &str, roles: &[String]) -> Vec<&'static str> {
+        if self.unavailable || me == user || self.owner_id == user { return vec![]; }
+        if roles.iter().chain(self.my_roles.iter()).any(|id| !self.roles.iter().any(|r| r["id"] == *id)) { return vec![]; }
+        let highest = |ids: &[String]| self.roles.iter()
+            .filter(|r| r["id"] != self.id && ids.iter().any(|id| r["id"] == *id))
+            .filter_map(|r| r["position"].as_u64()).max().unwrap_or(0);
+        if self.owner_id != me && highest(&self.my_roles) <= highest(roles) { return vec![]; }
+        let p = self.base(me);
+        let mut actions = Vec::new();
+        if p & KICK_MEMBERS != 0 { actions.push("kick"); }
+        if p & BAN_MEMBERS != 0 { actions.push("ban"); }
+        let admin = self.role_bits(&self.id) & ADMINISTRATOR != 0 || roles.iter().any(|id| self.role_bits(id) & ADMINISTRATOR != 0);
+        if p & MODERATE_MEMBERS != 0 && !admin { actions.extend(["timeout", "untimeout"]); }
+        actions
     }
 
     pub fn permissions(&self, me: &str, channel: &Value) -> u64 {
@@ -449,6 +469,28 @@ mod tests {
             "members": [{ "user": { "id": "5" }, "roles": [] }],
         });
         Guild::parse(&g, "5", None).unwrap()
+    }
+
+    #[test]
+    fn moderation_requires_permission_and_a_lower_target_role() {
+        let mut g = guild();
+        g.roles[1]["position"] = json!(10);
+        g.roles[1]["permissions"] = json!((KICK_MEMBERS | BAN_MEMBERS | MODERATE_MEMBERS).to_string());
+        g.roles[2]["position"] = json!(20);
+        assert!(g.moderation_actions("5", "6", &[]).is_empty(), "no permissions");
+        g.my_roles = vec!["2".into()];
+        assert_eq!(g.moderation_actions("5", "6", &[]), ["kick", "ban", "timeout", "untimeout"]);
+        assert!(g.moderation_actions("5", "5", &[]).is_empty(), "self");
+        assert!(g.moderation_actions("5", "99", &[]).is_empty(), "owner");
+        assert!(g.moderation_actions("5", "6", &["2".into()]).is_empty(), "equal role");
+        assert!(g.moderation_actions("5", "6", &["3".into()]).is_empty(), "higher role");
+        assert!(g.moderation_actions("5", "6", &["missing-role".into()]).is_empty(), "unknown role");
+        assert_eq!(g.moderation_actions("99", "6", &["3".into()]), ["kick", "ban"], "even the owner cannot timeout an administrator");
+        g.roles[1]["permissions"] = json!(ADMINISTRATOR.to_string());
+        assert_eq!(g.moderation_actions("5", "6", &[]), ["kick", "ban", "timeout", "untimeout"]);
+        assert!(g.moderation_actions("5", "6", &["3".into()]).is_empty(), "administrator still follows hierarchy");
+        g.unavailable = true;
+        assert!(g.moderation_actions("99", "6", &[]).is_empty());
     }
 
     #[test]

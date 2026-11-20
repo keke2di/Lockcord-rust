@@ -136,6 +136,12 @@ installer is then under `target\release\bundle\nsis`. The Mac app is built by
 ## Running
 
 - Sign in with Discord's own login page (a separate window opens), or with a session token.
+- Use **Switch accounts** beside your profile (or on the sign-in screen) to add a named account
+  or reopen a saved one. Sign in once per account; switching keeps the saved logins and reopens
+  LockCord with that account's separate settings and encryption keys. Calls and secret chats end.
+- In a server member's profile, **Moderate** offers timeout, remove timeout, kick and ban when
+  your permissions and role hierarchy allow them. Actions support an audit log reason. Right-click
+  a server message to delete it when you have Manage Messages. Bans keep existing messages.
 - `lockcord.exe --profile=alt` runs a second account next to the first.
 - `lockcord.exe --safe-mode` starts with the default theme.
 - Settings, themes and encrypted-DM contacts are kept per profile in

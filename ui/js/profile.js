@@ -54,7 +54,7 @@ export function profileCard(u, p, ctx) {
     head.appendChild(h('div', { class: 'status-bubble', title: ctx.custom.text || '' },
       customEmoji(ctx.custom.emoji, ctx.emojiUrl), ctx.custom.text ? h('span', { class: 'status-bubble-text' }, ctx.custom.text) : null));
   }
-  if (p) head.appendChild(actions(user, self, ctx));
+  if (p) head.appendChild(actions(user, self, ctx, p));
   const card = h('div', { class: 'profile-card' }, top,
     h('button', { type: 'button', class: 'profile-close', 'aria-label': 'Close', title: 'Close', onclick: (e) => { e.stopPropagation(); ctx.close(); } }, icon(ICONS.close, 20)),
     head);
@@ -126,7 +126,7 @@ function about(panel, user, p, ctx) {
 }
 
 // Small buttons beside the avatar, as Discord's full profile has them.
-function actions(user, self, ctx) {
+function actions(user, self, ctx, profile) {
   const row = h('div', { class: 'profile-actions' });
   const button = (label, path, fn, cls) => h('button', { type: 'button', class: 'button tiny ' + (cls || 'secondary'), title: label, onclick: (e) => { e.stopPropagation(); fn(); } },
     path ? icon(path, 14) : null, h('span', null, label));
@@ -141,6 +141,7 @@ function actions(user, self, ctx) {
   else if (rel === OUTGOING) row.appendChild(button('Request Sent', null, ctx.remove));
   else if (rel !== BLOCKED && !user.bot) row.appendChild(button('Add Friend', ICONS.add, ctx.add, 'positive'));
   row.appendChild(rel === BLOCKED ? button('Unblock', null, ctx.unblock) : button('Block', null, ctx.block, 'danger-outline'));
+  if (ctx.guild && profile.moderation?.length && ctx.moderate) row.appendChild(button('Moderate', null, () => ctx.moderate(profile.moderation), 'danger-outline'));
   return row;
 }
 

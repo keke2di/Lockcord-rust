@@ -50,17 +50,21 @@ export function guildIcon(guild, cls) {
 // ctx: { guilds, selected (guild id or null for home), unread(guild), mentions(guild),
 //        homeMentions, home(), open(guild) }
 export function renderRail(rail, ctx) {
+  const scrollTop = rail.scrollTop;
+  const focused = rail.contains(document.activeElement) ? document.activeElement?.dataset.railId : null;
   rail.textContent = '';
-  const item = (selected, unread, count, title, node, onclick) => h('div', { class: 'rail-item' + (selected ? ' selected' : '') + (unread ? ' unread' : '') },
+  const item = (selected, unread, count, title, node, onclick, id) => h('div', { class: 'rail-item' + (selected ? ' selected' : '') + (unread ? ' unread' : '') },
     h('span', { class: 'rail-pill' }),
-    h('button', { type: 'button', class: 'rail-button', title, 'aria-label': title, onclick }, node,
+    h('button', { type: 'button', class: 'rail-button', title, 'aria-label': title, dataset: { railId: id }, onclick }, node,
       count ? h('span', { class: 'badge rail-badge' }, count > 99 ? '99+' : String(count)) : null));
-  rail.appendChild(item(ctx.selected === null, false, ctx.homeMentions, 'Direct Messages', h('span', { class: 'rail-home' }, icon(ICONS.lock, 26)), () => ctx.home()));
+  rail.appendChild(item(ctx.selected === null, false, ctx.homeMentions, 'Direct Messages', h('span', { class: 'rail-home' }, icon(ICONS.lock, 26)), () => ctx.home(), '@me'));
   rail.appendChild(h('div', { class: 'rail-separator' }));
   for (const g of ctx.guilds) {
     if (g.unavailable) continue;
-    rail.appendChild(item(ctx.selected === g.id, ctx.unread(g), ctx.mentions(g), g.name, guildIcon(g, 'rail-icon'), () => ctx.open(g)));
+    rail.appendChild(item(ctx.selected === g.id, ctx.unread(g), ctx.mentions(g), g.name, guildIcon(g, 'rail-icon'), () => ctx.open(g), g.id));
   }
+  if (focused) [...rail.querySelectorAll('button')].find((b) => b.dataset.railId === focused)?.focus({ preventScroll: true });
+  rail.scrollTop = scrollTop;
 }
 
 // --- A server's channels ----------------------------------------------------------------------------

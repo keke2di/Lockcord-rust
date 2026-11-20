@@ -6,6 +6,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod accounts;
 mod auth;
 mod call;
 mod captcha;
@@ -389,7 +390,7 @@ struct App {
 fn profile_arg() -> String {
     std::env::args()
         .find_map(|a| a.strip_prefix("--profile=").map(str::to_owned))
-        .filter(|p| !p.is_empty() && p.len() <= 32 && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .filter(|p| accounts::valid_profile(p))
         .unwrap_or_else(|| "default".to_owned())
 }
 
@@ -616,6 +617,9 @@ fn on_dispatch(app: &AppHandle, state: &App, token: &str, name: &str, mut data: 
                 live.saved = auth::save(&state.profile, token);
             }
             let payload = ready_view(live);
+            if let Ok(store) = store(app, state) {
+                let _ = store.write_json("account.json", &json!({ "name": live.me["global_name"], "username": live.me["username"] }));
+            }
             drop(guard);
             emit(app, "lc://ready", payload);
         }
@@ -1046,6 +1050,38 @@ fn sign_out(app: AppHandle, state: State<App>) {
     emit(&app, "lc://session", json!({ "signedIn": false }));
 }
 
+#[tauri::command]
+fn accounts_list(app: AppHandle, state: State<App>) -> Result<Value, String> {
+    let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(json!(accounts::list(&data, &state.profile)))
+}
+
+// Relaunch with the selected profile so all caches, keys, calls and WebViews stay isolated.
+#[tauri::command]
+fn account_switch(app: AppHandle, state: State<App>, profile: String, create: bool) -> Result<(), String> {
+    if !accounts::valid_profile(&profile) { return Err("Use 1–32 letters, digits, hyphens or underscores for the account label.".into()); }
+    if profile == state.profile { return Err("This account is already open.".into()); }
+    let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let target = data.join("profiles").join(&profile);
+    if create && target.exists() { return Err("That account label already exists. Choose it from the list instead.".into()); }
+    if !create && !accounts::list(&data, &state.profile).iter().any(|a| a["profile"] == profile) {
+        return Err("Unknown account.".into());
+    }
+    std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    let mut command = std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
+    command.arg(format!("--profile={profile}"));
+    if state.safe_mode { command.arg("--safe-mode"); }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW (no console flash in debug builds).
+    }
+    command.spawn().map_err(|e| format!("Couldn't open the account: {e}"))?;
+    stop_session(&state);
+    app.exit(0);
+    Ok(())
+}
+
 // 50 messages: the newest, or those before, after or around a message (a jump to an old one).
 #[tauri::command]
 async fn messages(app: AppHandle, state: State<'_, App>, channel_id: String, before: Option<String>, after: Option<String>, around: Option<String>) -> Result<Value, String> {
@@ -1272,7 +1308,14 @@ async fn edit_message(state: State<'_, App>, channel_id: String, message_id: Str
 
 #[tauri::command]
 async fn delete_message(state: State<'_, App>, channel_id: String, message_id: String) -> Result<(), String> {
-    check_own(&state, &channel_id, &message_id)?;
+    if !is_id(&channel_id) || !is_id(&message_id) { return Err("bad id".into()); }
+    let can_manage = state.live.lock().unwrap().as_ref().is_some_and(|l| {
+        l.guild_with(&channel_id).is_some_and(|g| l.guilds[g].channel(&channel_id)
+            .is_some_and(|c| l.guilds[g].permissions(&l.me_id(), c) & (guilds::VIEW_CHANNEL | guilds::MANAGE_MESSAGES) == (guilds::VIEW_CHANNEL | guilds::MANAGE_MESSAGES)))
+    });
+    if !can_manage {
+        check_own(&state, &channel_id, &message_id)?;
+    }
     let queue = queue_of(&state)?;
     match queue.delete(&channel_id, &message_id, None).await {
         Ok(deletion::Outcome::Deleted) => Ok(()),
@@ -3102,7 +3145,18 @@ async fn user_profile(state: State<'_, App>, user_id: String, guild_id: Option<S
         path.push_str(&format!("guild_id={g}"));
     }
     let body = rest_of(&state)?.get(path.trim_end_matches(['?', '&'])).await.map_err(|e| e.to_string())?;
-    let view = people::profile_view(&body);
+    let mut view = people::profile_view(&body);
+    if let Some(guild_id) = guild_id.as_deref() {
+        let guard = state.live.lock().unwrap();
+        if let Some(live) = guard.as_ref() {
+            if let Some(guild) = live.guilds.iter().find(|g| g.id == guild_id) {
+                if let Some(roles) = body["guild_member"]["roles"].as_array() {
+                    let roles = roles.iter().filter_map(|r| r.as_str().map(str::to_owned)).collect::<Vec<_>>();
+                    view["moderation"] = json!(guild.moderation_actions(&live.me_id(), &user_id, &roles));
+                }
+            }
+        }
+    }
     if view["mutual_guilds"].as_array().is_some_and(|m| !m.is_empty()) {
         if let Some(live) = state.live.lock().unwrap().as_mut() {
             if live.dm_ok.len() > 5000 {
@@ -3112,6 +3166,46 @@ async fn user_profile(state: State<'_, App>, user_id: String, guild_id: Option<S
         }
     }
     Ok(view)
+}
+
+#[tauri::command]
+async fn moderate_member(state: State<'_, App>, guild_id: String, user_id: String, action: String, until: Option<String>, reason: String) -> Result<(), String> {
+    if !is_id(&guild_id) || !is_id(&user_id) { return Err("bad id".into()); }
+    if !["kick", "ban", "timeout", "untimeout"].contains(&action.as_str()) { return Err("Unknown moderation action.".into()); }
+    if reason.chars().count() > 512 { return Err("Keep the reason under 512 characters.".into()); }
+    let rest = rest_of(&state)?;
+    // Fetch current target roles; never trust profile data sent back by the UI.
+    {
+        let guard = state.live.lock().unwrap();
+        let live = guard.as_ref().ok_or("Not signed in.")?;
+        if !live.guilds.iter().any(|g| g.id == guild_id && !g.unavailable) { return Err("Not a server you're in.".into()); }
+    }
+    let member = rest.get(&format!("/guilds/{guild_id}/members/{user_id}")).await.map_err(|e| e.to_string())?;
+    let roles = member["roles"].as_array().ok_or("Couldn't verify this member's roles.")?
+        .iter().filter_map(|r| r.as_str().map(str::to_owned)).collect::<Vec<_>>();
+    {
+        let guard = state.live.lock().unwrap();
+        let live = guard.as_ref().ok_or("Not signed in.")?;
+        let guild = live.guilds.iter().find(|g| g.id == guild_id).ok_or("Unknown server.")?;
+        if !guild.moderation_actions(&live.me_id(), &user_id, &roles).contains(&action.as_str()) {
+            return Err("Your permissions or role hierarchy don't allow that action.".into());
+        }
+    }
+    let (method, path, body) = match action.as_str() {
+        "kick" => (reqwest::Method::DELETE, format!("/guilds/{guild_id}/members/{user_id}"), None),
+        "ban" => (reqwest::Method::PUT, format!("/guilds/{guild_id}/bans/{user_id}"), Some(json!({ "delete_message_seconds": 0 }))),
+        _ => {
+            // Discord validates the ISO timestamp and its maximum timeout duration.
+            if action == "timeout" && !until.as_deref().is_some_and(|s| s.len() == 24 && s.is_ascii() && s.ends_with('Z')) {
+                return Err("Choose a timeout duration.".into());
+            }
+            let value = if action == "untimeout" { Value::Null } else { json!(until) };
+            (reqwest::Method::PATCH, format!("/guilds/{guild_id}/members/{user_id}"), Some(json!({ "communication_disabled_until": value })))
+        }
+    };
+    let reason = percent_encoding::utf8_percent_encode(reason.trim(), percent_encoding::NON_ALPHANUMERIC).to_string();
+    rest.request_with(method, &path, body, &[("X-Audit-Log-Reason", reason.as_str())]).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // --- GIFs for the picker (gifs.rs) --------------------------------------------------------------
@@ -3675,7 +3769,7 @@ fn main() {
             privacy: Mutex::new(privacy::Privacy::default()), secret_on_screen: AtomicBool::new(false), shield_up: Mutex::new(None) })
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, serve_media)
         .register_uri_scheme_protocol(captcha::SCHEME, serve_captcha)
-        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites, shield_hint, copy_text, net_log, debug_drop_gateway, debug_e2e_age, e2e_keep_copy, e2e_erase_copy, e2e_file_info]))
+        .invoke_handler(only_main(tauri::generate_handler![status, sign_in, sign_in_with_token, sign_out, accounts_list, account_switch, moderate_member, messages, send_message, edit_message, delete_message, react, typing, upload_attachment, ack, relationship, open_dm, subscribe, settings_get, settings_save, purge_scan, purge_run, purge_stop, guard_list, guard_set, guard_remove, translate_texts, translate_outgoing, e2e_status, e2e_enable, e2e_accept_change, e2e_verify, e2e_forget, viewing, save_folder, pick_save_folder, save_media, open_link, add_friend, user_profile, set_status, create_group, group_add, group_leave, pins, pin, threads, thread_join, forum_posts, poll_vote, search, thread_open, e2e_accept_offer, e2e_ignore_offer, call_join, call_leave, call_decline, call_peek, call_controls, call_ptt, call_camera, call_volume, call_share_sources, call_share, call_share_stop, call_watch, call_watch_stop, call_frame, voice_devices, voice_test, voice_test_level, update_check, update_dismiss, update_install, member_search, gif_trending, gif_search, gif_favorites, shield_hint, copy_text, net_log, debug_drop_gateway, debug_e2e_age, e2e_keep_copy, e2e_erase_copy, e2e_file_info]))
         .setup(move |app| {
             if let Ok(version) = tauri::webview_version() {
                 fingerprint::set_engine_version(&version);

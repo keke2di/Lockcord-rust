@@ -777,6 +777,11 @@ button:disabled { cursor: not-allowed; }
 .modal-preview .message { margin-top: 0; padding-right: 16px; }
 .modal-preview .message:hover { background: none; }
 .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin: 0 -16px; padding: 16px; background: var(--lc-popout); }
+.account-list, .moderation-fields { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.modal.account-modal, .modal.moderation-modal { max-height: calc(100vh - 64px); overflow-y: auto; }
+.account-list { max-height: 40vh; overflow-y: auto; }
+.account-list .button { flex: none; white-space: normal; overflow-wrap: anywhere; }
+.moderation-fields label, .account-modal label { display: flex; flex-direction: column; gap: 6px; }
 
 .viewer { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .viewer-image { max-width: 90vw; max-height: 85vh; border-radius: var(--lc-radius-s); }
@@ -1100,7 +1105,8 @@ button:disabled { cursor: not-allowed; }
     scrollbar-width: none;
     background: var(--lc-rail);
 }
-.rail-item { position: relative; width: var(--lc-rail-width); display: flex; justify-content: center; }
+.app > .rail { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; }
+.rail-item { flex: none; position: relative; width: var(--lc-rail-width); display: flex; justify-content: center; }
 .rail-pill {
     position: absolute;
     left: 0;
